@@ -26,10 +26,12 @@ const Sidebar = () => {
           <CalendarCheck size={20} />
           Điểm danh
         </NavLink>
-        <NavLink to="/tuition" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-          <CreditCard size={20} />
-          Học phí
-        </NavLink>
+        {localStorage.getItem('edu_role') !== 'trogiang' && (
+          <NavLink to="/tuition" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            <CreditCard size={20} />
+            Học phí
+          </NavLink>
+        )}
         <NavLink to="/grades" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
           <GraduationCap size={20} />
           Sổ điểm

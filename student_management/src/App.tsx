@@ -10,20 +10,37 @@ import Tuition from './pages/Tuition';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [usernameInput, setUsernameInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   
   useEffect(() => {
-    if (localStorage.getItem('edu_password')) {
+    const user = localStorage.getItem('edu_user');
+    const pass = localStorage.getItem('edu_password');
+    if (user && pass) {
+      setIsAuthenticated(true);
+      // Fetch role
+      import('./utils/api').then(({ default: api }) => {
+        api.get('/api/auth/me')
+           .then(res => localStorage.setItem('edu_role', res.data.role))
+           .catch(() => {
+              localStorage.removeItem('edu_user');
+              localStorage.removeItem('edu_password');
+              setIsAuthenticated(false);
+           });
+      });
+    } else if (pass) {
+      // Legacy fallback
       setIsAuthenticated(true);
     }
   }, []);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (passwordInput.trim() !== '') {
+    if (usernameInput.trim() !== '' && passwordInput.trim() !== '') {
+      localStorage.setItem('edu_user', usernameInput.toLowerCase().trim());
       localStorage.setItem('edu_password', passwordInput);
       setIsAuthenticated(true);
-      window.location.reload(); // Reload to initialize api client correctly
+      window.location.reload(); 
     }
   };
 
@@ -34,14 +51,24 @@ function App() {
           <h2 style={{ textAlign: 'center', marginBottom: '24px', color: 'var(--text-primary)' }}>Nội Bộ LT1 EDUCATION</h2>
           <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div>
-              <label className="form-label">Mật khẩu truy cập</label>
+              <label className="form-label">Tài khoản (Tên đăng nhập)</label>
+              <input 
+                type="text" 
+                className="form-input" 
+                value={usernameInput}
+                onChange={(e) => setUsernameInput(e.target.value)}
+                placeholder="VD: admin, vanphong, trogiang..." 
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="form-label">Mật khẩu</label>
               <input 
                 type="password" 
                 className="form-input" 
                 value={passwordInput}
                 onChange={(e) => setPasswordInput(e.target.value)}
                 placeholder="Nhập mật khẩu..." 
-                autoFocus
               />
             </div>
             <button type="submit" className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }}>Đăng nhập</button>

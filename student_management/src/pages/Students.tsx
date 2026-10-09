@@ -256,9 +256,11 @@ const Students = () => {
             <Download size={18} /> Xuất Excel
           </button>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-          <Plus size={18} /> Thêm Học Sinh
-        </button>
+        {localStorage.getItem('edu_role') !== 'trogiang' && (
+          <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+            <Plus size={18} /> Thêm Học Sinh
+          </button>
+        )}
       </div>
 
       {error && (

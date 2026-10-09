@@ -9,18 +9,37 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Internal Password Authentication Middleware
+// Test Accounts (Demo RBAC)
+const TEST_USERS = {
+  'admin': { pass: '123456', role: 'admin' },
+  'vanphong': { pass: '123456', role: 'vanphong' },
+  'trogiang': { pass: '123456', role: 'trogiang' }
+};
+
+// Internal Authentication Middleware
 app.use('/api', (req, res, next) => {
-  // Allow health endpoint to be public for cloud services (e.g. Render) to check if server is up
   if (req.path === '/health') return next();
   
+  const clientUser = req.headers['x-api-user'];
   const clientKey = req.headers['x-api-key'];
-  const serverKey = process.env.API_PASSWORD || 'trungtam123'; // Default password if not set in .env
+  const serverKey = process.env.API_PASSWORD || 'trungtam123';
   
-  if (clientKey !== serverKey) {
-    return res.status(401).json({ error: 'Unauthorized: Incorrect internal password' });
+  // Fallback for old sessions that only have API_PASSWORD
+  if (!clientUser && clientKey === serverKey) {
+    req.user = { username: 'admin', role: 'admin' };
+    return next();
   }
-  next();
+
+  if (clientUser && TEST_USERS[clientUser] && TEST_USERS[clientUser].pass === clientKey) {
+    req.user = { username: clientUser, role: TEST_USERS[clientUser].role };
+    return next();
+  }
+
+  return res.status(401).json({ error: 'Unauthorized: Incorrect username or password' });
+});
+
+app.get('/api/auth/me', (req, res) => {
+  res.json({ username: req.user.username, role: req.user.role });
 });
 
 // Load Service Account Credentials

@@ -5,8 +5,14 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
+  const user = localStorage.getItem('edu_user');
   const password = localStorage.getItem('edu_password');
-  if (password) {
+  
+  if (user && password) {
+    config.headers['x-api-user'] = user;
+    config.headers['x-api-key'] = password;
+  } else if (password) {
+    // Backwards compatibility for old single-password sessions
     config.headers['x-api-key'] = password;
   }
   return config;
