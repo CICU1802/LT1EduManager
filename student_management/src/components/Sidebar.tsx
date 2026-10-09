@@ -38,7 +38,7 @@ const Sidebar = () => {
         </NavLink>
       </nav>
       
-      <div style={{ padding: '24px', borderTop: '1px solid rgba(255,255,255,0.1)', marginTop: 'auto' }}>
+      <div style={{ padding: '24px', borderTop: '1px solid var(--border-color)', marginTop: 'auto' }}>
         <button 
           onClick={() => {
             localStorage.removeItem('edu_user');
@@ -52,16 +52,16 @@ const Sidebar = () => {
             gap: '12px',
             width: '100%',
             padding: '12px',
-            background: 'rgba(255,255,255,0.1)',
-            border: 'none',
+            background: 'var(--bg-danger)',
+            border: '1px solid var(--accent-danger)',
             borderRadius: '12px',
-            color: 'white',
+            color: 'var(--accent-danger)',
             cursor: 'pointer',
             transition: 'all 0.2s',
-            fontWeight: 500
+            fontWeight: 600
           }}
-          onMouseOver={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'}
-          onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+          onMouseOver={(e) => { e.currentTarget.style.background = 'var(--accent-danger)'; e.currentTarget.style.color = 'white'; }}
+          onMouseOut={(e) => { e.currentTarget.style.background = 'var(--bg-danger)'; e.currentTarget.style.color = 'var(--accent-danger)'; }}
         >
           <LogOut size={20} />
           Đăng xuất
