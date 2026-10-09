@@ -96,14 +96,16 @@ const Dashboard = () => {
           <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Trung bình 28 HS / Lớp</div>
         </div>
 
-        <div className="glass-panel stat-card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div className="stat-label">Doanh Thu Học Phí</div>
-            <CreditCard size={20} color="var(--accent-success)" />
+        {localStorage.getItem('edu_role') === 'admin' && (
+          <div className="glass-panel stat-card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div className="stat-label">Doanh Thu Học Phí</div>
+              <CreditCard size={20} color="var(--accent-success)" />
+            </div>
+            <div className="stat-value" style={{ color: 'var(--accent-success)' }}>{loading ? '...' : stats.totalRevenue}</div>
+            <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Đã thu 85% tổng dự kiến</div>
           </div>
-          <div className="stat-value" style={{ color: 'var(--accent-success)' }}>{loading ? '...' : stats.totalRevenue}</div>
-          <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Đã thu 85% tổng dự kiến</div>
-        </div>
+        )}
 
         <div className="glass-panel stat-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
