@@ -6,7 +6,7 @@ const Sidebar = () => {
     <aside className="sidebar">
       <div className="sidebar-logo">
         <GraduationCap size={32} strokeWidth={2.5} />
-        EduManager
+        LT1 EDUCATION
       </div>
       
       <nav>

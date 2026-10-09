@@ -31,7 +31,7 @@ function App() {
     return (
       <div style={{ display: 'flex', height: '100vh', width: '100vw', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-default)' }}>
         <div className="glass-panel" style={{ width: '100%', maxWidth: '400px', padding: '32px' }}>
-          <h2 style={{ textAlign: 'center', marginBottom: '24px', color: 'var(--text-primary)' }}>Nội Bộ Trung Tâm</h2>
+          <h2 style={{ textAlign: 'center', marginBottom: '24px', color: 'var(--text-primary)' }}>Nội Bộ LT1 EDUCATION</h2>
           <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div>
               <label className="form-label">Mật khẩu truy cập</label>
