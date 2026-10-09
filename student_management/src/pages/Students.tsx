@@ -58,7 +58,7 @@ const Students = () => {
       setGroupedClasses(groups);
       
     } catch (err) {
-      setError('Không thể tải dữ liệu từ Google Sheets.');
+      setError('Lỗi tải dữ liệu: ' + (err.message || String(err)));
       console.error(err);
     } finally {
       setLoading(false);
