@@ -12,25 +12,32 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [usernameInput, setUsernameInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
+  const [isInitializing, setIsInitializing] = useState(true);
   
   useEffect(() => {
     const user = localStorage.getItem('edu_user');
     const pass = localStorage.getItem('edu_password');
     if (user && pass) {
-      setIsAuthenticated(true);
-      // Fetch role
       import('./utils/api').then(({ default: api }) => {
         api.get('/api/auth/me')
-           .then(res => localStorage.setItem('edu_role', res.data.role))
+           .then(res => {
+             localStorage.setItem('edu_role', res.data.role);
+             setIsAuthenticated(true);
+             setIsInitializing(false);
+           })
            .catch(() => {
               localStorage.removeItem('edu_user');
               localStorage.removeItem('edu_password');
               setIsAuthenticated(false);
+              setIsInitializing(false);
            });
       });
     } else if (pass) {
       // Legacy fallback
       setIsAuthenticated(true);
+      setIsInitializing(false);
+    } else {
+      setIsInitializing(false);
     }
   }, []);
 
@@ -39,10 +46,13 @@ function App() {
     if (usernameInput.trim() !== '' && passwordInput.trim() !== '') {
       localStorage.setItem('edu_user', usernameInput.toLowerCase().trim());
       localStorage.setItem('edu_password', passwordInput);
-      setIsAuthenticated(true);
       window.location.reload(); 
     }
   };
+
+  if (isInitializing) {
+    return <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center' }}>Đang xác thực hệ thống...</div>;
+  }
 
   if (!isAuthenticated) {
     return (
