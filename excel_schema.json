@@ -1,0 +1,66 @@
+{
+  "C2 ĐIỂM DANH LT1 (26-27).xlsx": {
+    "columns": [
+      "Unnamed: 0",
+      "Unnamed: 1",
+      "ĐÁNH GIÁ NĂNG LỰC 2026"
+    ],
+    "data_sample": [
+      {
+        "Unnamed: 0": NaN,
+        "Unnamed: 1": NaN,
+        "ĐÁNH GIÁ NĂNG LỰC 2026": NaN
+      }
+    ]
+  },
+  "C3 ĐIỂM DANH LT1 (26-27).xlsx": {
+    "columns": [
+      "     ",
+      "Unnamed: 1",
+      "ĐÁNH GIÁ NĂNG LỰC 2026"
+    ],
+    "data_sample": [
+      {
+        "     ": NaN,
+        "Unnamed: 1": NaN,
+        "ĐÁNH GIÁ NĂNG LỰC 2026": NaN
+      }
+    ]
+  },
+  "CẤP 2 HP LT1 26 - 27 .xlsx": {
+    "columns": [
+      "TÊN HS",
+      "NGÀY ĐI HỌC",
+      "LỚP HỌC",
+      "SĐT PH"
+    ],
+    "data_sample": [
+      {
+        "TÊN HS": "Nguyễn Hoàng Thiên Di",
+        "NGÀY ĐI HỌC": "nhắc đi học, đi học ngày 7/7 8V",
+        "LỚP HỌC": "8TC, 8T1, 8V, 8KHTN",
+        "SĐT PH": 931499423.0
+      }
+    ]
+  },
+  "CẤP 3 HP LT1 26 - 27 .xlsx": {
+    "columns": [
+      "Tên học sinh",
+      "Lớp",
+      "Ngày thu ",
+      "Số tiền",
+      "Phương thức",
+      "ghi chú"
+    ],
+    "data_sample": [
+      {
+        "Tên học sinh": "Hồ Nguyễn Kinh Luân",
+        "Lớp": "11TC- K2",
+        "Ngày thu ": "2026-08-18",
+        "Số tiền": 3400000,
+        "Phương thức": "tiền mặt",
+        "ghi chú": NaN
+      }
+    ]
+  }
+}
