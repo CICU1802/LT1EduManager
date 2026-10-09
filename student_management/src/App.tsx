@@ -46,7 +46,7 @@ function App() {
     if (usernameInput.trim() !== '' && passwordInput.trim() !== '') {
       localStorage.setItem('edu_user', usernameInput.toLowerCase().trim());
       localStorage.setItem('edu_password', passwordInput);
-      window.location.reload(); 
+      window.location.href = '/'; 
     }
   };
 

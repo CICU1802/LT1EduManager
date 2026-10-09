@@ -44,7 +44,7 @@ const Sidebar = () => {
             localStorage.removeItem('edu_user');
             localStorage.removeItem('edu_password');
             localStorage.removeItem('edu_role');
-            window.location.reload();
+            window.location.href = '/';
           }}
           style={{
             display: 'flex',
