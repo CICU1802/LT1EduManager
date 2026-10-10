@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, AlertTriangle, TrendingUp, CreditCard, Activity } from 'lucide-react';
+import { Users, AlertTriangle, TrendingUp, CreditCard, Activity, Check } from 'lucide-react';
 import api from '../utils/api';
 
 const Dashboard = () => {
@@ -10,21 +10,26 @@ const Dashboard = () => {
     absentWarnings: 0,
     recentActivity: []
   });
+  const [pendingStudents, setPendingStudents] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
         // Fetch parallel requests for performance
-        const [studentRes, classRes, tuitionRes] = await Promise.all([
+        const [studentRes, classRes, tuitionRes, pendingRes] = await Promise.all([
           api.get('/api/students'),
           api.get('/api/classes'),
-          api.get('/api/tuition')
+          api.get('/api/tuition'),
+          api.get('/api/pending-students').catch(() => ({ data: [] }))
         ]);
         
         const students = studentRes.data || [];
         const classes = classRes.data || [];
         const tuitions = tuitionRes.data || [];
+        const pending = pendingRes.data || [];
+        
+        setPendingStudents(pending);
 
         // Calculate Revenue
         let sumRevenue = 0;
@@ -73,6 +78,17 @@ const Dashboard = () => {
     fetchStats();
   }, []);
 
+  const handleApprovePending = async (id) => {
+    if (!window.confirm('Đánh dấu là đã xử lý xong học sinh này?')) return;
+    try {
+      await api.delete(`/api/pending-students/${id}`);
+      setPendingStudents(prev => prev.filter(p => p.id !== id));
+    } catch (err) {
+      console.error(err);
+      alert('Lỗi khi duyệt: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
   return (
     <div className="fade-in">
       <div className="dashboard-grid">
@@ -116,6 +132,43 @@ const Dashboard = () => {
           <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Học sinh có số buổi vắng {'>'} 0</div>
         </div>
       </div>
+      
+      {/* Bảng báo cáo Học sinh mới chờ duyệt (Văn phòng / Admin) */}
+      {localStorage.getItem('edu_role') !== 'trogiang' && pendingStudents.length > 0 && (
+        <div className="glass-panel fade-in" style={{ marginTop: '32px', borderColor: 'var(--accent-warning)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+            <h2 style={{ color: 'var(--accent-warning)', display: 'flex', alignItems: 'center', gap: '8px' }}><AlertTriangle size={24} /> Cần Xử Lý: Học Sinh Mới Phát Sinh</h2>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+            <thead>
+              <tr>
+                <th>Lớp</th>
+                <th>Ngày báo</th>
+                <th>Họ và Tên</th>
+                <th>SĐT / Ghi chú</th>
+                <th>Người báo</th>
+                <th style={{ textAlign: 'right' }}>Hành động</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pendingStudents.map(p => (
+                <tr key={p.id}>
+                  <td style={{ fontWeight: 500 }}>{p.class}</td>
+                  <td style={{ color: 'var(--text-secondary)' }}>{p.date}</td>
+                  <td style={{ fontWeight: 'bold' }}>{p.name}</td>
+                  <td style={{ color: 'var(--text-secondary)' }}>{p.note}</td>
+                  <td><span className="badge badge-warning">{p.reportedBy}</span></td>
+                  <td style={{ textAlign: 'right' }}>
+                    <button className="btn btn-primary" style={{ padding: '6px 16px', fontSize: '0.85rem', background: 'var(--accent-success)' }} onClick={() => handleApprovePending(p.id)}>
+                      <Check size={16} /> Đã xử lý xong
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div className="glass-panel" style={{ marginTop: '32px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>

@@ -21,6 +21,12 @@ const Attendance = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
 
+  // Pending student state
+  const [pendingName, setPendingName] = useState('');
+  const [pendingNote, setPendingNote] = useState('');
+  const [submittingPending, setSubmittingPending] = useState(false);
+  const [pendingSuccess, setPendingSuccess] = useState('');
+
   // Fetch list of classes on mount
   useEffect(() => {
     const fetchClasses = async () => {
@@ -138,6 +144,40 @@ const Attendance = () => {
       setError(err.response?.data?.error || 'Lỗi khi lưu điểm danh.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const submitPendingStudent = async () => {
+    if (!pendingName.trim()) {
+      setError('Vui lòng nhập tên học sinh mới.');
+      return;
+    }
+    
+    setSubmittingPending(true);
+    setPendingSuccess('');
+    setError('');
+    
+    try {
+      const classInfo = classes.find(c => c.id === selectedClass);
+      const className = classInfo ? classInfo.name : selectedClass;
+      
+      await api.post('/api/pending-students', {
+        date: attendanceDate,
+        className: className,
+        studentName: pendingName,
+        note: pendingNote
+      });
+      
+      setPendingSuccess('Đã báo cáo học sinh mới thành công! Văn phòng sẽ xử lý sớm.');
+      setPendingName('');
+      setPendingNote('');
+      
+      setTimeout(() => setPendingSuccess(''), 5000);
+    } catch (err) {
+      console.error(err);
+      setError(err.response?.data?.error || 'Lỗi khi báo cáo học sinh.');
+    } finally {
+      setSubmittingPending(false);
     }
   };
 
@@ -368,6 +408,29 @@ const Attendance = () => {
               {saving ? <span className="spin"><RefreshCw size={18}/></span> : <Save size={18} />}
               <span style={{ marginLeft: '8px' }}>{saving ? 'Đang lưu...' : 'Lưu Điểm Danh'}</span>
             </button>
+          </div>
+          
+          {/* Report New Student Form */}
+          <div style={{ marginTop: '48px', paddingTop: '24px', borderTop: '1px solid var(--border-color)' }}>
+            <h3 style={{ marginBottom: '16px', color: 'var(--text-secondary)' }}>Có học sinh mới phát sinh chưa có tên?</h3>
+            {pendingSuccess && (
+              <div style={{ padding: '12px', background: 'rgba(16, 185, 129, 0.1)', color: 'var(--accent-success)', borderRadius: '8px', marginBottom: '16px' }}>
+                {pendingSuccess}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <div style={{ flex: '1', minWidth: '200px' }}>
+                <label className="form-label">Tên học sinh mới</label>
+                <input type="text" className="form-input" placeholder="Ví dụ: Nguyễn Văn A" value={pendingName} onChange={e => setPendingName(e.target.value)} />
+              </div>
+              <div style={{ flex: '1', minWidth: '200px' }}>
+                <label className="form-label">SĐT / Ghi chú</label>
+                <input type="text" className="form-input" placeholder="SĐT phụ huynh hoặc ghi chú thêm" value={pendingNote} onChange={e => setPendingNote(e.target.value)} />
+              </div>
+              <button className="btn btn-secondary" onClick={submitPendingStudent} disabled={submittingPending || !pendingName.trim()}>
+                {submittingPending ? 'Đang gửi...' : 'Gửi báo cáo lên Văn phòng'}
+              </button>
+            </div>
           </div>
         </div>
       )}

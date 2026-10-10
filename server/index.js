@@ -666,6 +666,91 @@ app.post('/api/tuition', async (req, res) => {
   }
 });
 
+// Get Pending Students (Học sinh chờ duyệt)
+app.get('/api/pending-students', async (req, res) => {
+  try {
+    const sheets = await getSheetsAPI();
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: process.env.SPREADSHEET_ID,
+      range: 'DB_ChoDuyet!A2:G',
+    });
+    const rows = response.data.values || [];
+    const pending = rows.map(row => ({
+      id: row[0] || '',
+      date: row[1] || '',
+      class: row[2] || '',
+      name: row[3] || '',
+      note: row[4] || '',
+      reportedBy: row[5] || '',
+      status: row[6] || ''
+    }));
+    res.json(pending);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Add Pending Student (Trợ giảng báo cáo học sinh mới)
+app.post('/api/pending-students', async (req, res) => {
+  const { date, className, studentName, note } = req.body;
+  try {
+    const newId = 'CD' + Date.now().toString().slice(-6);
+    const reporter = req.user?.username || 'unknown';
+    
+    const sheets = await getSheetsAPI();
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: process.env.SPREADSHEET_ID,
+      range: 'DB_ChoDuyet!A:G',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [[newId, date, className, studentName, note, reporter, 'Chờ duyệt']]
+      }
+    });
+    res.json({ success: true, id: newId });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete/Approve Pending Student
+app.delete('/api/pending-students/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const sheets = await getSheetsAPI();
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: process.env.SPREADSHEET_ID,
+      range: 'DB_ChoDuyet!A2:A',
+    });
+    const rows = response.data.values || [];
+    let rowIndex = -1;
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i][0] === id) {
+        rowIndex = i + 2; // +1 for 0-index, +1 for header
+        break;
+      }
+    }
+    
+    if (rowIndex === -1) return res.status(404).json({ error: 'Not found' });
+    
+    const metaResponse = await sheets.spreadsheets.get({ spreadsheetId: process.env.SPREADSHEET_ID });
+    const sheetId = metaResponse.data.sheets.find(s => s.properties.title === 'DB_ChoDuyet').properties.sheetId;
+    
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: process.env.SPREADSHEET_ID,
+      requestBody: {
+        requests: [{
+          deleteDimension: {
+            range: { sheetId, dimension: 'ROWS', startIndex: rowIndex - 1, endIndex: rowIndex }
+          }
+        }]
+      }
+    });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
