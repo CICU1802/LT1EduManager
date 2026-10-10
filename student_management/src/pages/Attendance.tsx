@@ -316,7 +316,7 @@ const Attendance = () => {
             </thead>
             <tbody>
               {paginatedStudents.map((hs, i) => (
-                <tr key={hs.id}>
+                <tr key={`${hs.id}-${hs.rowIndex || i}`}>
                   <td style={{ color: 'var(--text-secondary)', opacity: hs.isTransferred ? 0.5 : 1 }}>{startIndex + i + 1}</td>
                   <td style={{ fontWeight: '500', opacity: hs.isTransferred ? 0.6 : 1 }}>
                     {hs.isTransferred ? <del>{hs.name}</del> : hs.name}
