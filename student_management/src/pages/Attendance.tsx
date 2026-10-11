@@ -132,7 +132,7 @@ const Attendance = () => {
         return;
       }
       // Filter out students who haven't been marked yet
-      const recordsToSave = students.filter(s => s.status !== null);
+      const recordsToSave = students.filter(s => !s.isTransferred && s.status !== null);
       if (recordsToSave.length === 0) {
         setError('Vui lòng điểm danh ít nhất 1 học sinh trước khi lưu.');
         setSaving(false);
