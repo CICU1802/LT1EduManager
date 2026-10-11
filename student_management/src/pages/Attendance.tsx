@@ -1,3 +1,4 @@
+import { vietnamDate } from '../utils/date';
 import { useState, useEffect } from 'react';
 import { Check, X, Clock, AlertCircle, Save, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '../utils/api';
@@ -5,9 +6,10 @@ import api from '../utils/api';
 const Attendance = () => {
   const [classes, setClasses] = useState([]);
   const [selectedClass, setSelectedClass] = useState('');
-  const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
+  const [attendanceDate, setAttendanceDate] = useState(vietnamDate());
   
   const [students, setStudents] = useState([]);
+  const [loadedContext, setLoadedContext] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -69,8 +71,7 @@ const Attendance = () => {
     
     const classInfo = classes.find(c => c.id === selectedClass);
     if (classInfo && classInfo.schedule) {
-       const selectedD = new Date(attendanceDate);
-       const dow = selectedD.getDay(); // 0-6
+       const dow = new Date(`${attendanceDate}T12:00:00Z`).getUTCDay(); // 0-6
        const map = {
           0: /(CN|Chủ nhật|Chu nhat)/i,
           1: /(T2|Thứ 2|Thu 2)/i,
@@ -93,6 +94,7 @@ const Attendance = () => {
     try {
       const response = await api.get(`/api/attendance/class/${selectedClass}?date=${attendanceDate}`);
       setStudents(response.data);
+      setLoadedContext(`${selectedClass}|${attendanceDate}`);
       setCurrentPage(1); // Reset page on data load
     } catch (err) {
       console.error(err);
@@ -125,6 +127,10 @@ const Attendance = () => {
     setError('');
     setSuccessMsg('');
     try {
+      if (loadedContext !== `${selectedClass}|${attendanceDate}`) {
+        setError('Lớp hoặc ngày đã đổi. Vui lòng tải lại danh sách trước khi lưu.');
+        return;
+      }
       // Filter out students who haven't been marked yet
       const recordsToSave = students.filter(s => s.status !== null);
       if (recordsToSave.length === 0) {
@@ -136,7 +142,7 @@ const Attendance = () => {
       await api.post('/api/attendance', {
         classId: selectedClass,
         date: attendanceDate,
-        records: recordsToSave
+        records: recordsToSave.map(({ id, status, note }) => ({ id, status, note }))
       });
       setSuccessMsg('Đã lưu điểm danh thành công!');
     } catch (err) {

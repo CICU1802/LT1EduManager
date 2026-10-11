@@ -1,4 +1,7 @@
 import express from 'express';
+import { randomUUID } from 'node:crypto';
+import { createTuitionService } from './tuition.js';
+import { resolveAttendanceRecords, isDateMatch } from './integrity.js';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { google } from 'googleapis';
@@ -109,7 +112,7 @@ app.get('/api/students', async (req, res) => {
     
     res.json(students);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.status || 500).json({ error: error.message });
   }
 });
 
@@ -120,7 +123,7 @@ app.post('/api/students', async (req, res) => {
     const sheets = await getSheetsAPI();
     
     // Create new ID
-    const newId = `HS${Date.now().toString().slice(-6)}`;
+    const newId = `HS-${randomUUID()}`;
     
     await sheets.spreadsheets.values.append({
       spreadsheetId: process.env.SPREADSHEET_ID,
@@ -133,7 +136,7 @@ app.post('/api/students', async (req, res) => {
     
     res.json({ success: true, student: { id: newId, name, phone, parentPhone, parentName, dob, school, classes, dateJoined, status, debtStatus, absences, notes } });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.status || 500).json({ error: error.message });
   }
 });
 
@@ -156,7 +159,7 @@ app.get('/api/classes', async (req, res) => {
     }));
     res.json(classes);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.status || 500).json({ error: error.message });
   }
 });
 
@@ -171,33 +174,6 @@ function colToLetter(colIndex) {
 }
 
 // Helper to check if cellDate matches the requested date
-function isDateMatch(cellDateStr, reqDateYYYYMMDD) {
-  if (!cellDateStr) return false;
-  const cellStr = cellDateStr.toString().trim();
-  const parts = reqDateYYYYMMDD.split('-'); // 2026-10-14
-  if (parts.length !== 3) return false;
-  const yyyy = parts[0];
-  const yy = yyyy.slice(2);
-  const mm = parts[1];
-  const m = parseInt(mm, 10).toString();
-  const dd = parts[2];
-  const d = parseInt(dd, 10).toString();
-  
-  const formats = [
-    `${dd}/${mm}/${yyyy}`,
-    `${d}/${m}/${yyyy}`,
-    `${dd}/${mm}/${yy}`,
-    `${d}/${m}/${yy}`,
-    `${dd}/${mm}`,
-    `${d}/${m}`,
-    `${mm}/${dd}/${yyyy}`,
-    `${m}/${d}/${yyyy}`,
-    reqDateYYYYMMDD
-  ];
-  
-  return formats.some(f => cellStr === f || cellStr.includes(f));
-}
-
 // Get Students in a specific class for attendance (Direct from Class Sheet)
 app.get('/api/attendance/class/:classId', async (req, res) => {
   try {
@@ -305,7 +281,7 @@ app.get('/api/attendance/class/:classId', async (req, res) => {
       const studentName = row[nameColIdx];
       if (!studentName || studentName.toString().trim() === '') continue;
       
-      const studentId = row[nameColIdx + 1] ? row[nameColIdx + 1].toString().trim() : studentName.toString().trim();
+      const studentId = row[nameColIdx + 1] ? row[nameColIdx + 1].toString().trim() : '';
       
       let status = null;
       let note = '';
@@ -367,7 +343,7 @@ app.get('/api/attendance/class/:classId', async (req, res) => {
 
     res.json(students);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.status || 500).json({ error: error.message });
   }
 });
 
@@ -375,6 +351,8 @@ app.get('/api/attendance/class/:classId', async (req, res) => {
 app.post('/api/attendance', async (req, res) => {
   try {
     const { classId, date, records } = req.body;
+    if (typeof classId !== 'string' || !classId.trim()) return res.status(422).json({ error: 'Thiếu lớp điểm danh.' });
+    isDateMatch(date, date);
     const sheets = await getSheetsAPI();
     
     let spreadsheetId = process.env.SPREADSHEET_ID_ATTENDANCE || process.env.SPREADSHEET_ID;
@@ -396,7 +374,7 @@ app.post('/api/attendance', async (req, res) => {
     // First, we need to find the column for the date
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `'${exactSheetName}'`,
+      range: `'${exactSheetName.replaceAll("'", "''")}'`,
       valueRenderOption: 'FORMATTED_VALUE'
     });
     
@@ -416,6 +394,8 @@ app.post('/api/attendance', async (req, res) => {
       if (headerRowIdx !== -1) break;
     }
     
+    if (headerRowIdx < 0) return res.status(422).json({ error: 'Không tìm thấy cấu trúc bảng điểm danh.' });
+    const resolvedRecords = resolveAttendanceRecords(rows, headerRowIdx, nameColIdx, records);
     let dateColIdx = -1;
     const dateRow = rows[headerRowIdx + 1] || [];
     
@@ -455,21 +435,21 @@ app.post('/api/attendance', async (req, res) => {
       // Update the date header cell in the sheet
       await sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: `'${exactSheetName}'!${colToLetter(dateColIdx)}${headerRowIdx + 2}`,
-        valueInputOption: 'USER_ENTERED',
+        range: `'${exactSheetName.replaceAll("'", "''")}'!${colToLetter(dateColIdx)}${headerRowIdx + 2}`,
+        valueInputOption: 'RAW',
         requestBody: { values: [[formattedDate]] }
       });
     }
     
     // Prepare batch update
-    const data = records.map(record => {
+    const data = resolvedRecords.map(record => {
       let val = '';
-      if (record.status === 'Có mặt') val = 'TRUE';
-      else if (record.status === 'Vắng') val = 'FALSE';
+      if (record.status === 'Có mặt') val = true;
+      else if (record.status === 'Vắng') val = false;
       else val = record.note || record.status || '';
       
       return {
-        range: `'${exactSheetName}'!${colToLetter(dateColIdx)}${record.rowIndex}`,
+        range: `'${exactSheetName.replaceAll("'", "''")}'!${colToLetter(dateColIdx)}${record.rowIndex}`,
         values: [[val]]
       };
     });
@@ -478,7 +458,7 @@ app.post('/api/attendance', async (req, res) => {
       await sheets.spreadsheets.values.batchUpdate({
         spreadsheetId,
         requestBody: {
-          valueInputOption: 'USER_ENTERED',
+          valueInputOption: 'RAW',
           data: data
         }
       });
@@ -486,44 +466,23 @@ app.post('/api/attendance', async (req, res) => {
     
     res.json({ success: true, message: 'Saved successfully' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.status || 500).json({ error: error.message });
   }
 });
 
-// Get Tuitions (Học Phí)
+// Financial writes are serialized in this server; see deployment notes.
+const tuitionService = createTuitionService(getSheetsAPI, process.env);
 app.get('/api/tuition', async (req, res) => {
-  try {
-    const sheets = await getSheetsAPI();
-    
-    const [tuitionResp, studentResp] = await Promise.all([
-      sheets.spreadsheets.values.get({
-        spreadsheetId: process.env.SPREADSHEET_ID,
-        range: 'DB_HocPhi!A2:G',
-      }),
-      sheets.spreadsheets.values.get({
-        spreadsheetId: process.env.SPREADSHEET_ID,
-        range: 'DB_HocSinh!A2:B',
-      })
-    ]);
-
-    const studentMap = {};
-    const studentRows = studentResp.data.values || [];
-    studentRows.forEach(row => { studentMap[row[0]] = row[1]; });
-
-    const rows = tuitionResp.data.values || [];
-    const tuitions = rows.map(row => ({
-      id: row[0],
-      studentId: row[1],
-      studentName: row[2] || studentMap[row[1]] || 'Unknown',
-      amount: row[3],
-      date: row[4],
-      method: row[5],
-      status: row[6]
-    }));
-    res.json(tuitions);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+  try { res.json(await tuitionService.list()); }
+  catch (error) { res.status(error.status || 500).json({ error: error.message }); }
+});
+app.post('/api/tuition', async (req, res) => {
+  try { res.json(await tuitionService.create(req.body, req.user.username)); }
+  catch (error) { res.status(error.status || 500).json({ error: error.message }); }
+});
+app.post('/api/tuition/:id/retry', async (req, res) => {
+  try { res.json(await tuitionService.retry(req.params.id)); }
+  catch (error) { res.status(error.status || 500).json({ error: error.message }); }
 });
 
 // Add Class (Thêm Lớp Học)
@@ -543,126 +502,7 @@ app.post('/api/classes', async (req, res) => {
     
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Add Tuition (Thêm Hóa Đơn)
-app.post('/api/tuition', async (req, res) => {
-  try {
-    const { studentId, amount, method, status, date } = req.body;
-    const sheets = await getSheetsAPI();
-    
-    const newId = `HD${Date.now().toString().slice(-6)}`;
-    
-    // 1. Append to flat DB_HocPhi for Web history
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: process.env.SPREADSHEET_ID,
-      range: 'DB_HocPhi!A:G',
-      valueInputOption: 'USER_ENTERED',
-      requestBody: {
-        values: [[newId, studentId, '', amount, date, method, status]]
-      }
-    });
-
-    // 2. Synchronize to the old Tuition Class Sheets
-    try {
-      const enrollResp = await sheets.spreadsheets.values.get({
-        spreadsheetId: process.env.SPREADSHEET_ID,
-        range: 'DB_DangKyLop!A2:C',
-      });
-      const enrollRows = enrollResp.data.values || [];
-      const studentClasses = enrollRows.filter(row => row[0] === studentId).map(row => row[1]);
-
-      if (studentClasses.length > 0) {
-        // Divide amount evenly among classes
-        const splitAmount = Math.round(amount / studentClasses.length);
-        
-        for (const classId of studentClasses) {
-          let spreadsheetId = process.env.SPREADSHEET_ID_TUITION_C2 || process.env.SPREADSHEET_ID;
-          const upperClassId = classId.toUpperCase();
-          if (upperClassId.includes('10') || upperClassId.includes('11') || upperClassId.includes('12') || upperClassId.includes('ĐGNL')) {
-            spreadsheetId = process.env.SPREADSHEET_ID_TUITION_C3 || spreadsheetId;
-          }
-
-          const metaResponse = await sheets.spreadsheets.get({ spreadsheetId });
-          const sheetTitles = metaResponse.data.sheets.map(s => s.properties.title);
-          const exactSheetName = sheetTitles.find(t => t.trim() === classId.trim());
-          
-          if (!exactSheetName) continue; // Skip if sheet doesn't exist
-
-          const response = await sheets.spreadsheets.values.get({
-            spreadsheetId,
-            range: `'${exactSheetName}'`,
-          });
-          const rows = response.data.values || [];
-          
-          let headerRowIdx = -1;
-          let idColIdx = -1;
-          for (let i = 0; i < Math.min(15, rows.length); i++) {
-            for (let j = 0; j < rows[i].length; j++) {
-              if (rows[i][j] && rows[i][j].toString().toUpperCase() === 'MÃ HS') {
-                headerRowIdx = i;
-                idColIdx = j;
-                break;
-              }
-            }
-            if (headerRowIdx !== -1) break;
-          }
-          
-          if (headerRowIdx === -1 || idColIdx === -1) continue;
-          
-          let dateColIdx = -1;
-          let amountColIdx = -1;
-          const headerRow = rows[headerRowIdx] || [];
-          for (let j = 0; j < headerRow.length; j++) {
-            const val = headerRow[j] ? headerRow[j].toString().toUpperCase() : '';
-            if (val === 'NGÀY ĐÓNG') dateColIdx = j;
-            else if (val === 'THỰC ĐÓNG') amountColIdx = j;
-          }
-          
-          if (dateColIdx !== -1 && amountColIdx !== -1) {
-            for (let i = headerRowIdx + 1; i < rows.length; i++) {
-              if (rows[i][idColIdx] === studentId) {
-                let currentAmount = 0;
-                if (rows[i][amountColIdx]) {
-                  const raw = rows[i][amountColIdx].toString().replace(/[^0-9.-]+/g, "");
-                  currentAmount = parseInt(raw) || 0;
-                }
-                const newAmount = currentAmount + splitAmount;
-                
-                const updateData = [
-                  {
-                    range: `'${exactSheetName}'!${colToLetter(amountColIdx)}${i + 1}`,
-                    values: [[newAmount]]
-                  },
-                  {
-                    range: `'${exactSheetName}'!${colToLetter(dateColIdx)}${i + 1}`,
-                    values: [[date]]
-                  }
-                ];
-                
-                await sheets.spreadsheets.values.batchUpdate({
-                  spreadsheetId,
-                  requestBody: {
-                    valueInputOption: 'USER_ENTERED',
-                    data: updateData
-                  }
-                });
-                break; // done for this student in this sheet
-              }
-            }
-          }
-        }
-      }
-    } catch (syncError) {
-      console.error("Warning: Sync to old tuition sheets failed:", syncError);
-      // We don't throw, we still want the UI to succeed if DB_HocPhi saved.
-    }
-    
-    res.json({ success: true, tuition: { id: newId, studentId, amount, method, status, date } });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.status || 500).json({ error: error.message });
   }
 });
 
@@ -672,7 +512,7 @@ app.get('/api/pending-students', async (req, res) => {
     const sheets = await getSheetsAPI();
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.SPREADSHEET_ID,
-      range: 'DB_ChoDuyet!A2:G',
+      range: 'DB_ChoDuyet!A2:I',
     });
     const rows = response.data.values || [];
     const pending = rows.map(row => ({
@@ -682,11 +522,13 @@ app.get('/api/pending-students', async (req, res) => {
       name: row[3] || '',
       note: row[4] || '',
       reportedBy: row[5] || '',
-      status: row[6] || ''
+      status: row[6] || 'Chờ duyệt',
+      processedBy: row[7] || '',
+      processedAt: row[8] || ''
     }));
     res.json(pending);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.status || 500).json({ error: error.message });
   }
 });
 
@@ -694,7 +536,7 @@ app.get('/api/pending-students', async (req, res) => {
 app.post('/api/pending-students', async (req, res) => {
   const { date, className, studentName, note } = req.body;
   try {
-    const newId = 'CD' + Date.now().toString().slice(-6);
+    const newId = 'CD-' + randomUUID();
     const reporter = req.user?.username || 'unknown';
     
     const sheets = await getSheetsAPI();
@@ -708,18 +550,18 @@ app.post('/api/pending-students', async (req, res) => {
     });
     res.json({ success: true, id: newId });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.status || 500).json({ error: error.message });
   }
 });
 
 // Delete/Approve Pending Student
-app.delete('/api/pending-students/:id', async (req, res) => {
+app.post('/api/pending-students/:id/resolve', async (req, res) => {
   const { id } = req.params;
   try {
     const sheets = await getSheetsAPI();
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.SPREADSHEET_ID,
-      range: 'DB_ChoDuyet!A2:A',
+      range: 'DB_ChoDuyet!A2:I',
     });
     const rows = response.data.values || [];
     let rowIndex = -1;
@@ -732,22 +574,16 @@ app.delete('/api/pending-students/:id', async (req, res) => {
     
     if (rowIndex === -1) return res.status(404).json({ error: 'Not found' });
     
-    const metaResponse = await sheets.spreadsheets.get({ spreadsheetId: process.env.SPREADSHEET_ID });
-    const sheetId = metaResponse.data.sheets.find(s => s.properties.title === 'DB_ChoDuyet').properties.sheetId;
-    
-    await sheets.spreadsheets.batchUpdate({
+    if (rows[rowIndex - 2][6] === 'Đã xử lý') return res.json({ success: true });
+    await sheets.spreadsheets.values.update({
       spreadsheetId: process.env.SPREADSHEET_ID,
-      requestBody: {
-        requests: [{
-          deleteDimension: {
-            range: { sheetId, dimension: 'ROWS', startIndex: rowIndex - 1, endIndex: rowIndex }
-          }
-        }]
-      }
+      range: `DB_ChoDuyet!G${rowIndex}:I${rowIndex}`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [['Đã xử lý', req.user.username, new Date().toISOString()]] }
     });
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.status || 500).json({ error: error.message });
   }
 });
 
