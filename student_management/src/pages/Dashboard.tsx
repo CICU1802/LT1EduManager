@@ -1,6 +1,8 @@
+import { Link } from 'react-router-dom';
+import { notify } from '../utils/notify';
 import { vietnamDate } from '../utils/date';
 import { useState, useEffect } from 'react';
-import { Users, AlertTriangle, CreditCard, Activity, Check } from 'lucide-react';
+import { Users, AlertTriangle, CreditCard, Activity, Check, ArrowUpRight, CalendarCheck } from 'lucide-react';
 import api from '../utils/api';
 
 const Dashboard = () => {
@@ -30,12 +32,12 @@ const Dashboard = () => {
           api.get('/api/tuition'),
           api.get('/api/pending-students')
         ]);
-        
+
         const students = studentRes.data || [];
         const classes = classRes.data || [];
         const tuitions = tuitionRes.data || [];
         const pending = pendingRes.data || [];
-        
+
         setPendingStudents(pending);
 
         // Calculate Revenue
@@ -50,7 +52,7 @@ const Dashboard = () => {
         tuitions.forEach(t => {
           if (t.status === 'Đã nộp' && inMonth(t.date)) sumRevenue += parseAmount(t.amount);
         });
-        
+
         const formatMoney = (amount) => {
           if (amount >= 1000000) return (amount / 1000000).toFixed(1) + 'Tr';
           if (amount >= 1000) return (amount / 1000).toFixed(0) + 'K';
@@ -100,13 +102,14 @@ const Dashboard = () => {
       setPendingStudents(res.data);
     } catch (err) {
       console.error(err);
-      alert('Lỗi khi duyệt: ' + (err.response?.data?.error || err.message));
+      notify('Lỗi khi duyệt: ' + (err.response?.data?.error || err.message));
     }
   };
 
   return (
     <div className="fade-in">
-      <label>Kỳ báo cáo doanh thu theo ngày thu: <input type="month" value={reportMonth} onChange={e => setReportMonth(e.target.value)} /></label>
+      <section className="dashboard-intro"><div><span className="eyebrow">ĐỒNG HÀNH CÙNG SỰ TIẾN BỘ</span><h2>Một góc nhìn rõ ràng cho mỗi ngày.</h2><p>Hồ sơ, chuyên cần và học phí — những thông tin cần thiết để vận hành trung tâm hiệu quả.</p></div><div className="dashboard-intro-actions"><Link className="btn" to="/attendance"><CalendarCheck size={17} /> Điểm danh <ArrowUpRight size={15} /></Link><Link className="btn btn-secondary" to="/students">Hồ sơ học sinh <ArrowUpRight size={15} /></Link></div></section>
+      <div className="report-toolbar"><label htmlFor="report-month">Doanh thu theo tháng <input id="report-month" className="form-input" type="month" value={reportMonth} onChange={e => setReportMonth(e.target.value)} /></label><span className="report-note">Tính theo ngày thu · Chỉ gồm khoản đã nộp</span></div>
       {error && <p role="alert" style={{color: 'var(--accent-danger)'}}>{error}</p>}
       <div className="dashboard-grid">
         <div className="glass-panel stat-card">
@@ -149,14 +152,14 @@ const Dashboard = () => {
           <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Học sinh có số buổi vắng {'>'} 0</div>
         </div>
       </div>
-      
+
       {/* Bảng báo cáo Học sinh mới chờ duyệt (Văn phòng / Admin) */}
       {localStorage.getItem('edu_role') !== 'trogiang' && pendingStudents.length > 0 && (
         <div className="glass-panel fade-in" style={{ marginTop: '32px', borderColor: 'var(--accent-warning)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+          <div className="section-title-row">
             <h2 style={{ color: 'var(--accent-warning)', display: 'flex', alignItems: 'center', gap: '8px' }}><AlertTriangle size={24} /> Báo cáo học sinh mới</h2><button className="btn btn-secondary" onClick={() => setShowHistory(!showHistory)}>{showHistory ? 'Xem chờ xử lý' : 'Xem lịch sử xử lý'}</button>
           </div>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+          <div className="table-scroll" role="region" aria-label="Danh sách hoạt động" tabIndex={0}><table className="responsive-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
             <thead>
               <tr>
                 <th>Lớp</th>
@@ -170,12 +173,12 @@ const Dashboard = () => {
             <tbody>
               {pendingStudents.filter(p => showHistory ? p.status === 'Đã xử lý' : p.status !== 'Đã xử lý').map(p => (
                 <tr key={p.id}>
-                  <td style={{ fontWeight: 500 }}>{p.class}</td>
-                  <td style={{ color: 'var(--text-secondary)' }}>{p.date}</td>
-                  <td style={{ fontWeight: 'bold' }}>{p.name}</td>
-                  <td style={{ color: 'var(--text-secondary)' }}>{p.note}</td>
-                  <td><span className="badge badge-warning">{p.reportedBy}</span></td>
-                  <td style={{ textAlign: 'right' }}>
+                  <td data-label="Lớp" style={{ fontWeight: 500 }}>{p.class}</td>
+                  <td data-label="Ngày báo" style={{ color: 'var(--text-secondary)' }}>{p.date}</td>
+                  <td data-label="Họ và tên" style={{ fontWeight: 'bold' }}>{p.name}</td>
+                  <td data-label="Liên hệ / ghi chú" style={{ color: 'var(--text-secondary)' }}>{p.note}</td>
+                  <td data-label="Người báo"><span className="badge badge-warning">{p.reportedBy}</span></td>
+                  <td data-label="Xử lý" style={{ textAlign: 'right' }}>
                     {p.status === 'Đã xử lý' ? <span>{p.processedBy} · {p.processedAt}</span> : <button className="btn btn-primary" style={{ padding: '6px 16px', fontSize: '0.85rem', background: 'var(--accent-success)' }} onClick={() => handleApprovePending(p.id)}>
                       <Check size={16} /> Đã xử lý xong
                     </button>}
@@ -183,17 +186,17 @@ const Dashboard = () => {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </div>
       )}
 
       <div className="glass-panel" style={{ marginTop: '32px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+        <div className="section-title-row">
           <h2>Hoạt động gần đây</h2>
-          <button className="btn btn-secondary" style={{ padding: '8px 16px', fontSize: '0.85rem' }} onClick={() => alert('Đang tải toàn bộ lịch sử hoạt động...')}>Xem tất cả</button>
+          {localStorage.getItem('edu_role') !== 'trogiang' && <Link className="btn btn-secondary" to="/tuition">Xem hóa đơn <ArrowUpRight size={15} /></Link>}
         </div>
-        
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+
+        <div className="table-scroll" role="region" aria-label="Danh sách hoạt động" tabIndex={0}><table className="responsive-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
           <thead>
             <tr>
               <th>Mã HS</th>
@@ -209,16 +212,16 @@ const Dashboard = () => {
             ) : (
               stats.recentActivity.length === 0 ? <tr><td colSpan={5}>Chưa có giao dịch học phí.</td></tr> : stats.recentActivity.map((log, i) => (
                 <tr key={i}>
-                  <td style={{ color: 'var(--accent-primary)', fontWeight: '500' }}>{log.id}</td>
-                  <td>{log.name}</td>
-                  <td style={{ color: 'var(--text-secondary)' }}>{log.action}</td>
-                  <td><span className={`badge ${log.badge}`}>{log.status}</span></td>
-                  <td style={{ color: 'var(--text-secondary)' }}>{log.time}</td>
+                  <td data-label="Mã HS" style={{ color: 'var(--accent-primary)', fontWeight: '500' }}>{log.id}</td>
+                  <td data-label="Học sinh">{log.name}</td>
+                  <td data-label="Hoạt động" style={{ color: 'var(--text-secondary)' }}>{log.action}</td>
+                  <td data-label="Trạng thái"><span className={`badge ${log.badge}`}>{log.status}</span></td>
+                  <td data-label="Ngày thu" style={{ color: 'var(--text-secondary)' }}>{log.time}</td>
                 </tr>
               ))
             )}
           </tbody>
-        </table>
+        </table></div>
       </div>
     </div>
   );

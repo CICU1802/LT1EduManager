@@ -1,3 +1,4 @@
+import { notify } from '../utils/notify';
 import { vietnamDate } from '../utils/date';
 import { useState, useEffect } from 'react';
 import { Check, X, Clock, AlertCircle, Save, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -7,14 +8,14 @@ const Attendance = () => {
   const [classes, setClasses] = useState([]);
   const [selectedClass, setSelectedClass] = useState('');
   const [attendanceDate, setAttendanceDate] = useState(vietnamDate());
-  
+
   const [students, setStudents] = useState([]);
   const [loadedContext, setLoadedContext] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
-  
+
   const [studentSearch, setStudentSearch] = useState('');
   const [groupedClasses, setGroupedClasses] = useState({});
   const [selectedBaseClass, setSelectedBaseClass] = useState('');
@@ -36,7 +37,7 @@ const Attendance = () => {
         const response = await api.get('/api/classes');
         const classList = response.data;
         setClasses(classList);
-        
+
         const groups = {};
         classList.forEach(c => {
           let baseName = c.name;
@@ -50,7 +51,7 @@ const Attendance = () => {
           groups[baseName].push({ id: c.id, khoa: khoa });
         });
         setGroupedClasses(groups);
-        
+
         const baseKeys = Object.keys(groups);
         if (baseKeys.length > 0) {
           const firstBase = baseKeys[0];
@@ -68,7 +69,7 @@ const Attendance = () => {
   // Fetch students when class or date changes
   const loadAttendance = async () => {
     if (!selectedClass) return;
-    
+
     const classInfo = classes.find(c => c.id === selectedClass);
     if (classInfo && classInfo.schedule) {
        const dow = new Date(`${attendanceDate}T12:00:00Z`).getUTCDay(); // 0-6
@@ -93,7 +94,8 @@ const Attendance = () => {
     setSuccessMsg('');
     try {
       const response = await api.get(`/api/attendance/class/${selectedClass}?date=${attendanceDate}`);
-      setStudents(response.data);
+      setStudentSearch('');
+      setStudents(response.data.map(s => s.status === 'Khác' && /^Đi trễ(?:$|: )/.test(s.note || '') ? { ...s, status: 'Đi trễ', note: s.note.replace(/^Đi trễ(?:: )?/, '') } : s));
       setLoadedContext(`${selectedClass}|${attendanceDate}`);
       setCurrentPage(1); // Reset page on data load
     } catch (err) {
@@ -138,13 +140,14 @@ const Attendance = () => {
         setSaving(false);
         return;
       }
-      
+
       await api.post('/api/attendance', {
         classId: selectedClass,
         date: attendanceDate,
-        records: recordsToSave.map(({ id, status, note }) => ({ id, status, note }))
+        records: recordsToSave.map(({ id, status, note }) => ({ id, status: status === 'Đi trễ' ? 'Khác' : status, note: status === 'Đi trễ' ? `Đi trễ${note ? ': ' + note : ''}` : note }))
       });
       setSuccessMsg('Đã lưu điểm danh thành công!');
+      notify('Đã lưu điểm danh thành công.', 'success');
     } catch (err) {
       console.error(err);
       setError(err.response?.data?.error || 'Lỗi khi lưu điểm danh.');
@@ -158,26 +161,26 @@ const Attendance = () => {
       setError('Vui lòng nhập tên học sinh mới.');
       return;
     }
-    
+
     setSubmittingPending(true);
     setPendingSuccess('');
     setError('');
-    
+
     try {
       const classInfo = classes.find(c => c.id === selectedClass);
       const className = classInfo ? classInfo.name : selectedClass;
-      
+
       await api.post('/api/pending-students', {
         date: attendanceDate,
         className: className,
         studentName: pendingName,
         note: pendingNote
       });
-      
+
       setPendingSuccess('Đã báo cáo học sinh mới thành công! Văn phòng sẽ xử lý sớm.');
       setPendingName('');
       setPendingNote('');
-      
+
       setTimeout(() => setPendingSuccess(''), 5000);
     } catch (err) {
       console.error(err);
@@ -187,14 +190,15 @@ const Attendance = () => {
     }
   };
 
-  const presentCount = students.filter(s => s.status === 'Có mặt').length;
-  const absentCount = students.filter(s => s.status === 'Vắng').length;
+  const presentCount = students.filter(s => !s.isTransferred && s.status === 'Có mặt').length;
+  const absentCount = students.filter(s => !s.isTransferred && s.status === 'Vắng').length;
 
-  const filteredStudents = students.filter(s => 
-    !studentSearch || 
-    (s.name && s.name.toLowerCase().includes(studentSearch.toLowerCase())) || 
+  const filteredStudents = students.filter(s =>
+    !studentSearch ||
+    (s.name && s.name.toLowerCase().includes(studentSearch.toLowerCase())) ||
     (s.id && s.id.toLowerCase().includes(studentSearch.toLowerCase()))
   );
+
 
   // Pagination logic
   const totalPages = Math.ceil(filteredStudents.length / itemsPerPage);
@@ -216,15 +220,15 @@ const Attendance = () => {
     }
 
     return pages.map(pageNum => (
-      <button 
+      <button
         key={pageNum}
         className={`btn ${currentPage === pageNum ? 'btn-primary' : 'btn-secondary'}`}
-        style={{ 
-          padding: '8px', 
-          minWidth: '36px', 
+        style={{
+          padding: '8px',
+          minWidth: '36px',
           height: '36px',
-          display: 'flex', 
-          alignItems: 'center', 
+          display: 'flex',
+          alignItems: 'center',
           justifyContent: 'center',
           borderRadius: '8px',
           fontWeight: currentPage === pageNum ? 'bold' : 'normal'
@@ -238,17 +242,18 @@ const Attendance = () => {
 
   return (
     <div className="fade-in">
-      <div className="glass-panel" style={{ marginBottom: '24px', display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
+      <div className="glass-panel attendance-selector">
         <div style={{ flex: '1', minWidth: '200px' }}>
-          <label className="form-label">Chọn lớp học (Gõ để tìm kiếm)</label>
+          <label className="form-label" htmlFor="attendance-class">Chọn lớp học (Gõ để tìm kiếm)</label>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <input 
+            <input
               type="text"
+              id="attendance-class"
               list="base-classes-list"
-              className="form-input" 
-              style={{ flex: '2' }} 
-              value={selectedBaseClass} 
-              onChange={handleBaseClassChange} 
+              className="form-input"
+              style={{ flex: '2' }}
+              value={selectedBaseClass}
+              onChange={handleBaseClassChange}
               placeholder="Nhập tên lớp..."
             />
             <datalist id="base-classes-list">
@@ -256,11 +261,11 @@ const Attendance = () => {
                 <option key={baseName} value={baseName} />
               ))}
             </datalist>
-            
-            <select 
-              className="form-input" 
-              style={{ flex: '1' }} 
-              value={selectedClass} 
+
+            <select aria-label="Khóa học"
+              className="form-input"
+              style={{ flex: '1' }}
+              value={selectedClass}
               onChange={(e) => setSelectedClass(e.target.value)}
               disabled={!groupedClasses[selectedBaseClass]}
             >
@@ -271,8 +276,8 @@ const Attendance = () => {
           </div>
         </div>
         <div>
-          <label className="form-label">Ngày điểm danh</label>
-          <input type="date" className="form-input" value={attendanceDate} onChange={(e) => setAttendanceDate(e.target.value)} />
+          <label className="form-label" htmlFor="attendance-field-1">Ngày điểm danh</label>
+          <input id="attendance-field-1" type="date" className="form-input" value={attendanceDate} onChange={(e) => setAttendanceDate(e.target.value)} />
         </div>
         <button className="btn btn-primary" style={{ marginTop: '24px' }} onClick={loadAttendance} disabled={loading}>
           {loading ? 'Đang tải...' : 'Tải danh sách'}
@@ -281,10 +286,10 @@ const Attendance = () => {
 
       {error && (
         <div className="glass-panel" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', borderColor: 'var(--accent-danger)', marginBottom: '24px' }}>
-          <p style={{ color: 'var(--accent-danger)', display: 'flex', alignItems: 'center', gap: '8px' }}><AlertCircle size={18}/> {error}</p>
+          <p role="alert" style={{ color: 'var(--accent-danger)', display: 'flex', alignItems: 'center', gap: '8px' }}><AlertCircle size={18}/> {error}</p>
         </div>
       )}
-      
+
       {successMsg && (
         <div className="glass-panel" style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', borderColor: 'var(--accent-success)', marginBottom: '24px' }}>
           <p style={{ color: 'var(--accent-success)', display: 'flex', alignItems: 'center', gap: '8px' }}><Check size={18}/> {successMsg}</p>
@@ -295,14 +300,14 @@ const Attendance = () => {
         <div className="glass-panel fade-in">
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
             <h2>Danh sách lớp</h2>
-            
-            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-              <input 
-                type="text" 
-                className="form-input" 
-                placeholder="Tìm tên hoặc mã HS..." 
+
+            <div className="attendance-summary">
+              <input
+                type="text"
+                className="form-input"
+                placeholder="Tìm tên hoặc mã HS..." aria-label="Tìm tên hoặc mã HS..."
                 value={studentSearch}
-                onChange={(e) => setStudentSearch(e.target.value)}
+                onChange={(e) => { setStudentSearch(e.target.value); setCurrentPage(1); }}
                 style={{ width: '250px' }}
               />
               <span className="badge badge-success">Có mặt: {presentCount}</span>
@@ -310,7 +315,7 @@ const Attendance = () => {
             </div>
           </div>
 
-          <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
+          <div className="table-scroll" role="region" aria-label="Danh sách điểm danh" tabIndex={0}><table className="responsive-table" style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
                 <th>STT</th>
@@ -323,49 +328,49 @@ const Attendance = () => {
             <tbody>
               {paginatedStudents.map((hs, i) => (
                 <tr key={`${hs.id}-${hs.rowIndex || i}`}>
-                  <td style={{ color: 'var(--text-secondary)', opacity: hs.isTransferred ? 0.5 : 1 }}>{startIndex + i + 1}</td>
-                  <td style={{ fontWeight: '500', opacity: hs.isTransferred ? 0.6 : 1 }}>
+                  <td data-label="STT" style={{ color: 'var(--text-secondary)', opacity: hs.isTransferred ? 0.5 : 1 }}>{startIndex + i + 1}</td>
+                  <td data-label="Họ và tên" style={{ fontWeight: '500', opacity: hs.isTransferred ? 0.6 : 1 }}>
                     {hs.isTransferred ? <del>{hs.name}</del> : hs.name}
                     {hs.isTransferred && <span className="badge badge-secondary" style={{ marginLeft: '8px', fontSize: '0.75rem' }}>Đã chuyển</span>}
                   </td>
-                  <td style={{ color: 'var(--text-secondary)', opacity: hs.isTransferred ? 0.5 : 1 }}>{hs.id}</td>
-                  <td style={{ opacity: hs.isTransferred ? 0.5 : 1 }}>
-                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                      <button 
+                  <td data-label="Mã HS" style={{ color: 'var(--text-secondary)', opacity: hs.isTransferred ? 0.5 : 1 }}>{hs.id}</td>
+                  <td data-label="Điểm danh" style={{ opacity: hs.isTransferred ? 0.5 : 1 }}>
+                    <div className="attendance-controls">
+                      <button
                         onClick={() => handleStatusChange(hs.id, 'Có mặt')}
-                        className={`btn ${hs.status === 'Có mặt' ? 'btn-primary' : 'btn-secondary'}`} 
+                        className={`btn ${hs.status === 'Có mặt' ? 'btn-primary' : 'btn-secondary'}`}
                         style={{ padding: '8px', borderRadius: '50%', background: hs.status === 'Có mặt' ? 'var(--accent-success)' : '' }}
-                        title="Có mặt"
+                        aria-label={`Có mặt: ${hs.name}`} title="Có mặt"
                         disabled={hs.isTransferred}
                       >
-                        <Check size={16} />
+                        <Check size={16} /><span>Có mặt</span>
                       </button>
-                      <button 
+                      <button
                         onClick={() => handleStatusChange(hs.id, 'Vắng')}
-                        className={`btn ${hs.status === 'Vắng' ? 'btn-primary' : 'btn-secondary'}`} 
+                        className={`btn ${hs.status === 'Vắng' ? 'btn-primary' : 'btn-secondary'}`}
                         style={{ padding: '8px', borderRadius: '50%', background: hs.status === 'Vắng' ? 'var(--accent-danger)' : '' }}
-                        title="Vắng"
+                        aria-label={`Vắng: ${hs.name}`} title="Vắng"
                         disabled={hs.isTransferred}
                       >
-                        <X size={16} />
+                        <X size={16} /><span>Vắng</span>
                       </button>
-                      <button 
+                      <button
                         onClick={() => handleStatusChange(hs.id, 'Đi trễ')}
-                        className={`btn ${hs.status === 'Đi trễ' ? 'btn-primary' : 'btn-secondary'}`} 
+                        className={`btn ${hs.status === 'Đi trễ' ? 'btn-primary' : 'btn-secondary'}`}
                         style={{ padding: '8px', borderRadius: '50%', background: hs.status === 'Đi trễ' ? 'var(--accent-warning)' : '' }}
-                        title="Đi trễ"
+                        aria-label={`Đi trễ: ${hs.name}`} title="Đi trễ"
                         disabled={hs.isTransferred}
                       >
-                        <Clock size={16} />
+                        <Clock size={16} /><span>Đi trễ</span>
                       </button>
                     </div>
                   </td>
-                  <td style={{ opacity: hs.isTransferred ? 0.5 : 1 }}>
-                    <input 
-                      type="text" 
-                      className="form-input" 
-                      placeholder="Ghi chú..." 
-                      style={{ padding: '8px', fontSize: '0.85rem' }} 
+                  <td data-label="Ghi chú" style={{ opacity: hs.isTransferred ? 0.5 : 1 }}>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="Ghi chú..." aria-label="Ghi chú..."
+                      style={{ padding: '8px', fontSize: '0.85rem' }}
                       value={hs.note || ''}
                       onChange={(e) => handleNoteChange(hs.id, e.target.value)}
                       disabled={hs.isTransferred}
@@ -374,32 +379,32 @@ const Attendance = () => {
                 </tr>
               ))}
             </tbody>
-          </table>
-          
+          </table></div>
+
           {/* Pagination Controls */}
           {students.length > 0 && (
-            <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-              <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', backgroundColor: 'var(--bg-panel)', padding: '8px 16px', borderRadius: '20px', border: '1px solid var(--border-color)' }}>
-                Hiển thị <strong style={{ color: 'var(--text-primary)' }}>{startIndex + 1}</strong> đến <strong style={{ color: 'var(--text-primary)' }}>{Math.min(startIndex + itemsPerPage, students.length)}</strong> trong tổng số <strong style={{ color: 'var(--text-primary)' }}>{students.length}</strong> học sinh
+            <div className="pagination">
+              <div className="pagination-info" aria-live="polite">
+                Hiển thị <strong style={{ color: 'var(--text-primary)' }}>{startIndex + 1}</strong> đến <strong style={{ color: 'var(--text-primary)' }}>{Math.min(startIndex + itemsPerPage, filteredStudents.length)}</strong> trong tổng số <strong style={{ color: 'var(--text-primary)' }}>{filteredStudents.length}</strong> học sinh
               </div>
-              
-              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                <button 
-                  className="btn btn-secondary" 
-                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+
+              <div className="pagination-buttons">
+                <button
+                  className="btn btn-secondary"
+                  aria-label="Trang trước" onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
                   disabled={currentPage === 1}
                   style={{ padding: '8px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 >
                   <ChevronLeft size={18} />
                 </button>
-                
+
                 <div style={{ display: 'flex', gap: '4px' }}>
                   {renderPaginationButtons()}
                 </div>
-                
-                <button 
-                  className="btn btn-secondary" 
-                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+
+                <button
+                  className="btn btn-secondary"
+                  aria-label="Trang sau" onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
                   disabled={currentPage === totalPages || totalPages === 0}
                   style={{ padding: '8px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 >
@@ -408,14 +413,14 @@ const Attendance = () => {
               </div>
             </div>
           )}
-          
-          <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
+
+          <div className="attendance-save">
             <button className="btn btn-primary" onClick={saveAttendance} disabled={saving}>
               {saving ? <span className="spin"><RefreshCw size={18}/></span> : <Save size={18} />}
               <span style={{ marginLeft: '8px' }}>{saving ? 'Đang lưu...' : 'Lưu Điểm Danh'}</span>
             </button>
           </div>
-          
+
           {/* Report New Student Form */}
           <div style={{ marginTop: '48px', paddingTop: '24px', borderTop: '1px solid var(--border-color)' }}>
             <h3 style={{ marginBottom: '16px', color: 'var(--text-secondary)' }}>Có học sinh mới phát sinh chưa có tên?</h3>
@@ -426,12 +431,12 @@ const Attendance = () => {
             )}
             <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
               <div style={{ flex: '1', minWidth: '200px' }}>
-                <label className="form-label">Tên học sinh mới</label>
-                <input type="text" className="form-input" placeholder="Ví dụ: Nguyễn Văn A" value={pendingName} onChange={e => setPendingName(e.target.value)} />
+                <label className="form-label" htmlFor="attendance-field-2">Tên học sinh mới</label>
+                <input id="attendance-field-2" type="text" className="form-input" placeholder="Ví dụ: Nguyễn Văn A" value={pendingName} onChange={e => setPendingName(e.target.value)} />
               </div>
               <div style={{ flex: '1', minWidth: '200px' }}>
-                <label className="form-label">SĐT / Ghi chú</label>
-                <input type="text" className="form-input" placeholder="SĐT phụ huynh hoặc ghi chú thêm" value={pendingNote} onChange={e => setPendingNote(e.target.value)} />
+                <label className="form-label" htmlFor="attendance-field-3">SĐT / Ghi chú</label>
+                <input id="attendance-field-3" type="text" className="form-input" placeholder="SĐT phụ huynh hoặc ghi chú thêm" value={pendingNote} onChange={e => setPendingNote(e.target.value)} />
               </div>
               <button className="btn btn-secondary" onClick={submitPendingStudent} disabled={submittingPending || !pendingName.trim()}>
                 {submittingPending ? 'Đang gửi...' : 'Gửi báo cáo lên Văn phòng'}

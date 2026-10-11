@@ -1,74 +1,30 @@
+import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Users, BookOpen, CalendarCheck, CreditCard, GraduationCap, LogOut } from 'lucide-react';
-
-const Sidebar = () => {
-  return (
-    <aside className="sidebar">
-      <div className="sidebar-logo">
-        <GraduationCap size={32} strokeWidth={2.5} />
-        LT1 EDUCATION
-      </div>
-      
-      <nav>
-        <NavLink to="/dashboard" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-          <LayoutDashboard size={20} />
-          Tổng quan
-        </NavLink>
-        <NavLink to="/students" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-          <Users size={20} />
-          Học sinh
-        </NavLink>
-        <NavLink to="/classes" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-          <BookOpen size={20} />
-          Lớp học & Lịch
-        </NavLink>
-        <NavLink to="/attendance" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-          <CalendarCheck size={20} />
-          Điểm danh
-        </NavLink>
-        {localStorage.getItem('edu_role') !== 'trogiang' && (
-          <NavLink to="/tuition" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-            <CreditCard size={20} />
-            Học phí
-          </NavLink>
-        )}
-        <NavLink to="/grades" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-          <GraduationCap size={20} />
-          Sổ điểm
-        </NavLink>
-      </nav>
-      
-      <div style={{ padding: '24px', borderTop: '1px solid var(--border-color)', marginTop: 'auto' }}>
-        <button 
-          onClick={() => {
-            localStorage.removeItem('edu_user');
-            localStorage.removeItem('edu_password');
-            localStorage.removeItem('edu_role');
-            window.location.href = '/';
-          }}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            width: '100%',
-            padding: '12px',
-            background: 'var(--bg-danger)',
-            border: '1px solid var(--accent-danger)',
-            borderRadius: '12px',
-            color: 'var(--accent-danger)',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-            fontWeight: 600
-          }}
-          onMouseOver={(e) => { e.currentTarget.style.background = 'var(--accent-danger)'; e.currentTarget.style.color = 'white'; }}
-          onMouseOut={(e) => { e.currentTarget.style.background = 'var(--bg-danger)'; e.currentTarget.style.color = 'var(--accent-danger)'; }}
-        >
-          <LogOut size={20} />
-          Đăng xuất
-        </button>
-      </div>
-    </aside>
-  );
-};
-
-export default Sidebar;
+import { LayoutDashboard, Users, BookOpen, CalendarCheck, CreditCard, GraduationCap, LogOut, X, ChevronRight } from 'lucide-react';
+import { useDialogFocus } from '../hooks/useDialogFocus';
+const links = [
+  { path: '/dashboard', label: 'Tổng quan', icon: LayoutDashboard },
+  { path: '/students', label: 'Học sinh', icon: Users },
+  { path: '/classes', label: 'Lớp học & lịch', icon: BookOpen },
+  { path: '/attendance', label: 'Điểm danh', icon: CalendarCheck },
+  { path: '/tuition', label: 'Học phí', icon: CreditCard },
+  { path: '/grades', label: 'Sổ điểm', icon: GraduationCap }
+];
+export default function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 1023px)').matches);
+  useEffect(() => { const media = window.matchMedia('(max-width: 1023px)'); const change = () => { setMobile(media.matches); if (!media.matches) onClose(); }; media.addEventListener('change', change); return () => media.removeEventListener('change', change); }, [onClose]);
+  const ref = useDialogFocus(mobile && open, onClose);
+  const role = localStorage.getItem('edu_role'), user = localStorage.getItem('edu_user') || 'Nội bộ';
+  const roleName = role === 'admin' ? 'Quản trị viên' : role === 'trogiang' ? 'Trợ giảng' : 'Văn phòng';
+  return <>
+    {mobile && open && <button className="sidebar-backdrop" aria-label="Đóng menu điều hướng" onClick={onClose} tabIndex={-1} />}
+    <div ref={ref} id="app-navigation" className={`sidebar ${open ? 'is-open' : ''}`} role={mobile && open ? 'dialog' : undefined} aria-modal={mobile && open ? true : undefined} aria-label="Điều hướng chính" inert={mobile && !open} tabIndex={-1}>
+      <NavLink className="sidebar-logo" to="/dashboard" onClick={onClose}><span className="brand-mark"><GraduationCap size={25} /></span><span>LT1 <strong>EDUCATION</strong><small>Quản lý trung tâm</small></span></NavLink>
+      <button className="icon-button sidebar-close" aria-label="Đóng menu" onClick={onClose}><X size={20} /></button>
+      <div className="nav-caption">KHÔNG GIAN LÀM VIỆC</div>
+      <nav aria-label="Các chức năng">{links.filter(link => role !== 'trogiang' || link.path !== '/tuition').map(({path, label, icon: Icon}) => <NavLink key={path} to={path} onClick={onClose} className={({isActive}) => `nav-item ${isActive ? 'active' : ''}`}><Icon size={20} /><span>{label}</span><ChevronRight size={15} className="nav-arrow" /></NavLink>)}</nav>
+      <div className="sidebar-note"><span className="eyebrow">LT1 EDUCATION</span><p>Mỗi học sinh.<br />Một hành trình tiến bộ.</p><span className="sidebar-note-line" /></div>
+      <div className="sidebar-account"><div className="avatar">{user.slice(0, 1).toUpperCase()}</div><div><strong>{user}</strong><small>{roleName}</small></div><button className="icon-button" aria-label="Đăng xuất" title="Đăng xuất" onClick={() => { ['edu_user','edu_password','edu_role'].forEach(key => localStorage.removeItem(key)); window.location.href = '/'; }}><LogOut size={19} /></button></div>
+    </div>
+  </>;
+}
