@@ -43,8 +43,8 @@ const Dashboard = () => {
         const parseAmount = value => Number(String(value || '').replace(/[.,\sđ₫]/g, '')) || 0;
         const inMonth = value => {
           const text = String(value || '').trim();
-          if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text.slice(0, 7) === reportMonth;
-          const match = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+          if (/^\d{4}-\d{2}-\d{2}(?:[ T].*)?$/.test(text)) return text.slice(0, 7) === reportMonth;
+          const match = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T].*)?$/);
           return !!match && `${match[3]}-${match[2].padStart(2, '0')}` === reportMonth;
         };
         tuitions.forEach(t => {

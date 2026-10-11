@@ -80,7 +80,7 @@ async function getSheetsAPI() {
 
 // Test Endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'Server is running', sheetsConfigured: !!process.env.SPREADSHEET_ID });
+  res.json({ status: 'Server is running', integrityVersion: 1, sheetsConfigured: !!process.env.SPREADSHEET_ID });
 });
 
 // Get Students (Học Sinh)
