@@ -1,3 +1,5 @@
+import { notify } from '../utils/notify';
+import Modal from '../components/Modal';
 import { vietnamDate } from '../utils/date';
 import { useState, useEffect } from 'react';
 import { QrCode, RefreshCw, Plus, X, Search as SearchIcon, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -12,7 +14,7 @@ const Tuition = () => {
   // Filters
   const [statusFilter, setStatusFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
-  
+
   // Class selection state
   const [classesList, setClassesList] = useState([]);
   const [groupedClasses, setGroupedClasses] = useState({});
@@ -40,21 +42,21 @@ const Tuition = () => {
         api.get('/api/students'),
         api.get('/api/classes')
       ]);
-      
+
       const studentClassMap = {};
       studentsRes.data.forEach(s => {
           studentClassMap[s.id] = s.classes || '';
       });
-      
+
       const enrichedTuitions = tuitionRes.data.map(t => ({
           ...t,
           classes: t.classId || studentClassMap[t.studentId] || ''
       }));
       setTuitions(enrichedTuitions);
-      
+
       const cList = classesRes.data;
       setClassesList(cList);
-      
+
       const groups = {};
       cList.forEach(c => {
         let baseName = c.name;
@@ -68,7 +70,7 @@ const Tuition = () => {
         groups[baseName].push({ id: c.id, khoa: khoa });
       });
       setGroupedClasses(groups);
-      
+
     } catch (err) {
       setError('Không thể tải dữ liệu từ máy chủ.');
       console.error(err);
@@ -83,26 +85,26 @@ const Tuition = () => {
 
   useEffect(() => {
     let result = tuitions;
-    
+
     // Class Filter
     if (selectedClass !== 'All') {
       result = result.filter(t => t.classId === selectedClass);
     }
-    
+
     // Status Filter
     if (statusFilter !== 'All') {
       result = result.filter(t => t.status === statusFilter);
     }
-    
+
     // Search Filter
     if (searchQuery.trim() !== '') {
       const q = searchQuery.toLowerCase();
-      result = result.filter(t => 
-        (t.studentName && t.studentName.toLowerCase().includes(q)) || 
+      result = result.filter(t =>
+        (t.studentName && t.studentName.toLowerCase().includes(q)) ||
         (t.studentId && t.studentId.toLowerCase().includes(q))
       );
     }
-    
+
     setFilteredTuitions(result);
     setCurrentPage(1); // Reset page
   }, [searchQuery, statusFilter, selectedClass, tuitions]);
@@ -129,6 +131,7 @@ const Tuition = () => {
         if (response.data.tuition.syncStatus === 'Lỗi đồng bộ') {
           setError('Hóa đơn đã lưu nhưng chưa đồng bộ: ' + response.data.tuition.syncError);
         }
+        if (response.data.tuition.syncStatus !== 'Lỗi đồng bộ') notify('Đã lưu hóa đơn thành công.', 'success');
         setShowModal(false);
         setNewTuition({ requestId: crypto.randomUUID(), classId: '', period: vietnamDate().slice(0, 7), studentId: '', amount: 0, method: 'Tiền mặt', status: 'Đã nộp', date: vietnamDate() });
         fetchTuitionsAndClasses();
@@ -166,15 +169,15 @@ const Tuition = () => {
     }
 
     return pages.map(pageNum => (
-      <button 
+      <button
         key={pageNum}
         className={`btn ${currentPage === pageNum ? 'btn-primary' : 'btn-secondary'}`}
-        style={{ 
-          padding: '8px', 
-          minWidth: '36px', 
+        style={{
+          padding: '8px',
+          minWidth: '36px',
           height: '36px',
-          display: 'flex', 
-          alignItems: 'center', 
+          display: 'flex',
+          alignItems: 'center',
           justifyContent: 'center',
           borderRadius: '8px',
           fontWeight: currentPage === pageNum ? 'bold' : 'normal'
@@ -188,44 +191,44 @@ const Tuition = () => {
 
   return (
     <div className="fade-in">
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', flex: '1' }}>
+      <div className="page-toolbar">
+        <div className="toolbar-filters">
           <button className="btn btn-secondary" onClick={fetchTuitionsAndClasses} disabled={loading}>
             <RefreshCw size={18} className={loading ? 'spin' : ''} /> Làm mới
           </button>
-          
-          <div style={{ position: 'relative' }}>
+
+          <div className="search-field">
             <SearchIcon size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
-            <input 
-              type="text" 
-              className="form-input" 
-              placeholder="Tìm theo Mã hoặc Tên HS..." 
-              style={{ width: '220px', paddingLeft: '40px' }} 
+            <input
+              type="text"
+              className="form-input"
+              placeholder="Tìm theo Mã hoặc Tên HS..." aria-label="Tìm theo Mã hoặc Tên HS..."
+              style={{ width: '220px', paddingLeft: '40px' }}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
 
-          <div style={{ display: 'flex', gap: '8px', minWidth: '250px' }}>
-            <input 
+          <div className="field-pair">
+            <input
               type="text"
               list="tuition-base-classes"
-              className="form-input" 
-              style={{ flex: '2' }} 
-              value={selectedBaseClass} 
-              onChange={handleBaseClassChange} 
-              placeholder="Gõ để tìm lớp..."
+              className="form-input"
+              style={{ flex: '2' }}
+              value={selectedBaseClass}
+              onChange={handleBaseClassChange}
+              placeholder="Gõ để tìm lớp..." aria-label="Gõ để tìm lớp..."
             />
             <datalist id="tuition-base-classes">
               {Object.keys(groupedClasses).map(baseName => (
                 <option key={baseName} value={baseName} />
               ))}
             </datalist>
-            
-            <select 
-              className="form-input" 
-              style={{ flex: '1' }} 
-              value={selectedClass} 
+
+            <select aria-label="Khóa học"
+              className="form-input"
+              style={{ flex: '1' }}
+              value={selectedClass}
               onChange={(e) => setSelectedClass(e.target.value)}
               disabled={!selectedBaseClass || !groupedClasses[selectedBaseClass]}
             >
@@ -239,9 +242,9 @@ const Tuition = () => {
             </select>
           </div>
 
-          <select 
-            className="form-input" 
-            style={{ width: '150px' }} 
+          <select
+            className="form-input"
+            style={{ width: '150px' }}
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
           >
@@ -250,12 +253,12 @@ const Tuition = () => {
             <option value="Nợ">Nợ / Chưa nộp</option>
           </select>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+        <button className="btn btn-primary" onClick={() => { setError(''); setShowModal(true); }}>
           <Plus size={18} /> Lập Hóa Đơn Mới
         </button>
       </div>
 
-      <div className="dashboard-grid" style={{ marginBottom: '24px' }}>
+      <div className="dashboard-grid tuition-stats" style={{ marginBottom: '24px' }}>
         <div className="glass-panel stat-card">
           <div className="stat-label">Tổng Đã Thu</div>
           <div className="stat-value">
@@ -272,13 +275,13 @@ const Tuition = () => {
 
       {error && (
         <div className="glass-panel" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', borderColor: 'var(--accent-danger)', marginBottom: '24px' }}>
-          <p style={{ color: 'var(--accent-danger)' }}>{error}</p>
+          <p role="alert" style={{ color: 'var(--accent-danger)' }}>{error}</p>
         </div>
       )}
 
       <div className="glass-panel">
         <h2 style={{ marginBottom: '24px' }}>Danh sách Hóa Đơn</h2>
-        <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
+        <div className="table-scroll" role="region" aria-label="Danh sách hóa đơn" tabIndex={0}><table className="responsive-table" style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
               <th>Mã HĐ</th>
@@ -309,21 +312,21 @@ const Tuition = () => {
             ) : (
               paginatedTuitions.map((t, i) => (
                 <tr key={i}>
-                  <td style={{ color: 'var(--text-secondary)', fontWeight: '500' }}>{t.id}</td>
-                  <td style={{ fontWeight: '500' }}>{t.studentName}</td>
-                  <td style={{ color: 'var(--accent-primary)' }}>{t.studentId}</td>
-                  <td style={{ color: 'var(--accent-warning)', fontWeight: '600' }}>{formatCurrency(t.amount)}</td>
-                  <td>{t.classId || 'Chưa xác định'} / {t.period || 'Dữ liệu cũ'}</td>
-                  <td><span title={t.syncError}>{t.syncStatus}</span>{['Lỗi đồng bộ', 'Chờ đồng bộ'].includes(t.syncStatus) && <button className="btn btn-secondary" disabled={saving} onClick={async () => { setSaving(true); try { const res = await api.post(`/api/tuition/${t.id}/retry`); setError(res.data.tuition.syncError || ''); await fetchTuitionsAndClasses(); } catch (err) { setError(err.response?.data?.error || 'Không thể thử lại.'); } finally { setSaving(false); } }}>Thử lại</button>}</td>
-                  <td style={{ color: 'var(--text-secondary)' }}>{t.date}</td>
-                  <td>{t.method}</td>
-                  <td>
+                  <td data-label="Mã hóa đơn" style={{ color: 'var(--text-secondary)', fontWeight: '500' }}>{t.id}</td>
+                  <td data-label="Học sinh" style={{ fontWeight: '500' }}>{t.studentName}</td>
+                  <td data-label="Mã HS" style={{ color: 'var(--accent-primary)' }}>{t.studentId}</td>
+                  <td data-label="Số tiền" style={{ color: 'var(--accent-warning)', fontWeight: '600' }}>{formatCurrency(t.amount)}</td>
+                  <td data-label="Lớp / kỳ học">{t.classId || 'Chưa xác định'} / {t.period || 'Dữ liệu cũ'}</td>
+                  <td data-label="Đồng bộ"><span title={t.syncError}>{t.syncStatus}</span>{['Lỗi đồng bộ', 'Chờ đồng bộ'].includes(t.syncStatus) && <button className="btn btn-secondary" disabled={saving} onClick={async () => { setSaving(true); try { const res = await api.post(`/api/tuition/${t.id}/retry`); setError(res.data.tuition.syncError || ''); await fetchTuitionsAndClasses(); } catch (err) { setError(err.response?.data?.error || 'Không thể thử lại.'); } finally { setSaving(false); } }}>Thử lại</button>}</td>
+                  <td data-label="Ngày thu" style={{ color: 'var(--text-secondary)' }}>{t.date}</td>
+                  <td data-label="Phương thức">{t.method}</td>
+                  <td data-label="Trạng thái">
                     <span className={`badge ${t.status === 'Đã nộp' ? 'badge-success' : 'badge-danger'}`}>
                       {t.status}
                     </span>
                   </td>
-                  <td>
-                    <button className="btn btn-secondary" style={{ padding: '6px', borderRadius: '8px' }} title="Tạo mã QR" onClick={() => alert(`Tính năng tự động sinh mã QR thanh toán ngân hàng cho hóa đơn ${t.id} đang được phát triển!`)}>
+                  <td data-label="Thao tác">
+                    <button className="btn btn-secondary" style={{ padding: '6px', borderRadius: '8px' }} title="Mã QR thanh toán đang được hoàn thiện" disabled aria-label="Mã QR thanh toán chưa khả dụng">
                       <QrCode size={16} />
                     </button>
                   </td>
@@ -331,33 +334,33 @@ const Tuition = () => {
               ))
             )}
           </tbody>
-        </table>
+        </table></div>
       </div>
 
       {/* Pagination Controls */}
       {!loading && filteredTuitions.length > 0 && (
-        <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-          <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', backgroundColor: 'var(--bg-panel)', padding: '8px 16px', borderRadius: '20px', border: '1px solid var(--border-color)' }}>
+        <div className="pagination">
+          <div className="pagination-info" aria-live="polite">
             Hiển thị <strong style={{ color: 'var(--text-primary)' }}>{startIndex + 1}</strong> đến <strong style={{ color: 'var(--text-primary)' }}>{Math.min(startIndex + itemsPerPage, filteredTuitions.length)}</strong> trong tổng số <strong style={{ color: 'var(--text-primary)' }}>{filteredTuitions.length}</strong> hóa đơn
           </div>
-          
-          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-            <button 
-              className="btn btn-secondary" 
-              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+
+          <div className="pagination-buttons">
+            <button
+              className="btn btn-secondary"
+              aria-label="Trang trước" onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
               disabled={currentPage === 1}
               style={{ padding: '8px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
               <ChevronLeft size={18} />
             </button>
-            
+
             <div style={{ display: 'flex', gap: '4px' }}>
               {renderPaginationButtons()}
             </div>
-            
-            <button 
-              className="btn btn-secondary" 
-              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+
+            <button
+              className="btn btn-secondary"
+              aria-label="Trang sau" onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
               disabled={currentPage === totalPages || totalPages === 0}
               style={{ padding: '8px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
@@ -369,71 +372,72 @@ const Tuition = () => {
 
       {/* Add Tuition Modal */}
       {showModal && (
-        <div className="modal-overlay">
+        <Modal label="Lập hóa đơn học phí" onClose={() => !saving && setShowModal(false)}>
           <div className="modal-content">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+            <div className="modal-header">
               <h2>Lập Hóa Đơn Thu Phí</h2>
-              <button className="btn btn-secondary" style={{ padding: '8px', borderRadius: '50%' }} onClick={() => setShowModal(false)}>
+              <button className="btn btn-secondary" style={{ padding: '8px', borderRadius: '50%' }} aria-label="Đóng cửa sổ" disabled={saving} onClick={() => setShowModal(false)}>
                 <X size={20} />
               </button>
             </div>
-            
+
             <form onSubmit={handleAddTuition}>
               <p>Mỗi hóa đơn ghi nhận tiền cho một lớp và một kỳ học.</p>
               <div className="form-group">
-                <label className="form-label">Lớp *</label>
-                <select required className="form-input" value={newTuition.classId} onChange={e => setNewTuition({...newTuition, classId: e.target.value})}>
+                <label className="form-label" htmlFor="tuition-field-1">Lớp *</label>
+                <select id="tuition-field-1" required className="form-input" value={newTuition.classId} onChange={e => setNewTuition({...newTuition, classId: e.target.value})}>
                   <option value="">Chọn lớp</option>
                   {classesList.map(c => <option key={c.id} value={c.id}>{c.name} ({c.id})</option>)}
                 </select>
               </div>
               <div className="form-group">
-                <label className="form-label">Kỳ học phí (tháng) *</label>
-                <input required type="month" className="form-input" value={newTuition.period} onChange={e => setNewTuition({...newTuition, period: e.target.value})} />
+                <label className="form-label" htmlFor="tuition-field-2">Kỳ học phí (tháng) *</label>
+                <input id="tuition-field-2" required type="month" className="form-input" value={newTuition.period} onChange={e => setNewTuition({...newTuition, period: e.target.value})} />
               </div>
               <div className="form-group">
-                <label className="form-label">Mã Học Sinh *</label>
-                <input required type="text" className="form-input" placeholder="VD: HS2620001" value={newTuition.studentId} onChange={(e) => setNewTuition({...newTuition, studentId: e.target.value})} />
+                <label className="form-label" htmlFor="tuition-field-3">Mã Học Sinh *</label>
+                <input id="tuition-field-3" required type="text" className="form-input" placeholder="VD: HS2620001" value={newTuition.studentId} onChange={(e) => setNewTuition({...newTuition, studentId: e.target.value})} />
               </div>
-              
-              <div style={{ display: 'flex', gap: '16px' }}>
+
+              <div className="form-row">
                 <div className="form-group" style={{ flex: 1 }}>
-                  <label className="form-label">Số tiền thu (VNĐ) *</label>
-                  <input required min="1" step="1" type="number" className="form-input" value={newTuition.amount} onChange={(e) => setNewTuition({...newTuition, amount: Number(e.target.value)})} />
+                  <label className="form-label" htmlFor="tuition-field-4">Số tiền thu (VNĐ) *</label>
+                  <input id="tuition-field-4" required min="1" step="1" type="number" className="form-input" value={newTuition.amount} onChange={(e) => setNewTuition({...newTuition, amount: Number(e.target.value)})} />
                 </div>
                 <div className="form-group" style={{ flex: 1 }}>
-                  <label className="form-label">Ngày thu</label>
-                  <input required type="date" className="form-input" value={newTuition.date} onChange={(e) => setNewTuition({...newTuition, date: e.target.value})} />
+                  <label className="form-label" htmlFor="tuition-field-5">Ngày thu</label>
+                  <input id="tuition-field-5" required type="date" className="form-input" value={newTuition.date} onChange={(e) => setNewTuition({...newTuition, date: e.target.value})} />
                 </div>
               </div>
-              
-              <div style={{ display: 'flex', gap: '16px' }}>
+
+              <div className="form-row">
                 <div className="form-group" style={{ flex: 1 }}>
-                  <label className="form-label">Phương thức thanh toán</label>
-                  <select className="form-input" value={newTuition.method} onChange={(e) => setNewTuition({...newTuition, method: e.target.value})}>
+                  <label className="form-label" htmlFor="tuition-field-6">Phương thức thanh toán</label>
+                  <select id="tuition-field-6" className="form-input" value={newTuition.method} onChange={(e) => setNewTuition({...newTuition, method: e.target.value})}>
                     <option value="Tiền mặt">Tiền mặt</option>
                     <option value="Chuyển khoản">Chuyển khoản</option>
                     <option value="Khác">Khác</option>
                   </select>
                 </div>
                 <div className="form-group" style={{ flex: 1 }}>
-                  <label className="form-label">Trạng thái</label>
-                  <select className="form-input" value={newTuition.status} onChange={(e) => setNewTuition({...newTuition, status: e.target.value})}>
+                  <label className="form-label" htmlFor="tuition-field-7">Trạng thái</label>
+                  <select id="tuition-field-7" className="form-input" value={newTuition.status} onChange={(e) => setNewTuition({...newTuition, status: e.target.value})}>
                     <option value="Đã nộp">Đã nộp</option>
                     <option value="Nợ">Nợ</option>
                   </select>
                 </div>
               </div>
-              
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '32px' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Hủy</button>
+
+              {error && <p className="login-error" role="alert">{error}</p>}
+              <div className="form-actions">
+                <button type="button" className="btn btn-secondary" aria-label="Đóng cửa sổ" disabled={saving} onClick={() => setShowModal(false)}>Hủy</button>
                 <button type="submit" className="btn btn-primary" disabled={saving}>
                   {saving ? 'Đang lưu...' : 'Lưu Hóa Đơn'}
                 </button>
               </div>
             </form>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

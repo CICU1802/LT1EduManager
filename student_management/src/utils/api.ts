@@ -23,7 +23,7 @@ api.interceptors.response.use(
   error => {
     if (error.response && error.response.status === 401) {
       localStorage.removeItem('edu_password');
-      window.location.reload();
+      window.dispatchEvent(new Event('edu-session-expired'));
     }
     return Promise.reject(error);
   }

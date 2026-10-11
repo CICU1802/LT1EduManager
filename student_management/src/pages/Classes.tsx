@@ -1,3 +1,5 @@
+import { notify } from '../utils/notify';
+import Modal from '../components/Modal';
 import { useState, useEffect } from 'react';
 import { BookOpen, Users, Clock, DollarSign, Filter, Plus, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '../utils/api';
@@ -7,10 +9,10 @@ const Classes = () => {
   const [groupedFilteredClasses, setGroupedFilteredClasses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  
+
   // Filter state
   const [gradeFilter, setGradeFilter] = useState('All');
-  
+
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 12;
@@ -49,7 +51,7 @@ const Classes = () => {
     if (gradeFilter !== 'All') {
       filtered = filtered.filter(c => String(c.grade) === gradeFilter);
     }
-    
+
     const groups = {};
     filtered.forEach(c => {
       let baseName = c.name;
@@ -71,13 +73,13 @@ const Classes = () => {
       }
       groups[baseName].variants.push({ ...c, khoa });
     });
-    
+
     // Sort variants by Khoa inside each group, then sort groups by name
     const groupedArray = Object.values(groups).map(g => {
       g.variants.sort((a, b) => a.khoa.localeCompare(b.khoa));
       return g;
     }).sort((a, b) => a.baseName.localeCompare(b.baseName));
-    
+
     setGroupedFilteredClasses(groupedArray);
     setCurrentPage(1); // Reset to page 1 on filter
   }, [gradeFilter, classes]);
@@ -94,7 +96,7 @@ const Classes = () => {
       }
     } catch (err) {
       console.error(err);
-      alert('Lỗi khi thêm lớp học!');
+      notify('Lỗi khi thêm lớp học!');
     } finally {
       setSaving(false);
     }
@@ -112,7 +114,7 @@ const Classes = () => {
       setEnrolledStudentsGroups(responses.map(r => r.data));
     } catch (err) {
       console.error(err);
-      alert('Không thể tải danh sách học sinh của lớp này.');
+      notify('Không thể tải danh sách học sinh của lớp này.');
     } finally {
       setLoadingDetails(false);
     }
@@ -140,15 +142,15 @@ const Classes = () => {
     }
 
     return pages.map(pageNum => (
-      <button 
+      <button
         key={pageNum}
         className={`btn ${currentPage === pageNum ? 'btn-primary' : 'btn-secondary'}`}
-        style={{ 
-          padding: '8px', 
-          minWidth: '36px', 
+        style={{
+          padding: '8px',
+          minWidth: '36px',
           height: '36px',
-          display: 'flex', 
-          alignItems: 'center', 
+          display: 'flex',
+          alignItems: 'center',
           justifyContent: 'center',
           borderRadius: '8px',
           fontWeight: currentPage === pageNum ? 'bold' : 'normal'
@@ -162,12 +164,12 @@ const Classes = () => {
 
   return (
     <div className="fade-in">
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+      <div className="page-toolbar">
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           <Filter size={18} color="var(--text-secondary)" />
-          <select 
-            className="form-input" 
-            style={{ width: '150px', padding: '8px' }} 
+          <select
+            className="form-input"
+            style={{ width: '150px', padding: '8px' }}
             value={gradeFilter}
             onChange={(e) => setGradeFilter(e.target.value)}
           >
@@ -183,7 +185,7 @@ const Classes = () => {
 
       {error && (
         <div className="glass-panel" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', borderColor: 'var(--accent-danger)', marginBottom: '24px' }}>
-          <p style={{ color: 'var(--accent-danger)' }}>{error}</p>
+          <p role="alert" style={{ color: 'var(--accent-danger)' }}>{error}</p>
         </div>
       )}
 
@@ -194,11 +196,11 @@ const Classes = () => {
           <div style={{ padding: '32px', color: 'var(--text-secondary)' }}>Chưa có lớp học nào phù hợp.</div>
         ) : (
           paginatedClasses.map((group, i) => (
-            <div key={i} className="glass-panel stat-card" style={{ gap: '16px', position: 'relative', overflow: 'hidden' }}>
+            <div key={i} className="glass-panel stat-card class-card" style={{ gap: '16px', position: 'relative', overflow: 'hidden' }}>
               <div style={{ position: 'absolute', top: 0, right: 0, padding: '16px', opacity: 0.1 }}>
                 <BookOpen size={64} />
               </div>
-              
+
               <div style={{ zIndex: 1 }}>
                 <div style={{ display: 'inline-block', padding: '4px 8px', background: 'rgba(59, 130, 246, 0.2)', color: 'var(--accent-primary)', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 600, marginBottom: '8px' }}>
                   Khối {group.grade}
@@ -222,7 +224,7 @@ const Classes = () => {
                   <DollarSign size={16} color="var(--text-secondary)"/> Học phí: {group.tuition ? `${new Intl.NumberFormat('vi-VN').format(group.tuition)}đ` : 'Chưa đặt'}
                 </div>
               </div>
-              
+
               <div style={{ zIndex: 1, marginTop: '8px' }}>
                 <button className="btn btn-secondary" style={{ width: '100%', padding: '8px', fontSize: '0.85rem' }} onClick={() => fetchClassGroupDetails(group)}>Chi tiết & Danh sách HS</button>
               </div>
@@ -233,28 +235,28 @@ const Classes = () => {
 
       {/* Pagination Controls */}
       {!loading && groupedFilteredClasses.length > 0 && (
-        <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-          <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', backgroundColor: 'var(--bg-panel)', padding: '8px 16px', borderRadius: '20px', border: '1px solid var(--border-color)' }}>
+        <div className="pagination">
+          <div className="pagination-info" aria-live="polite">
             Hiển thị <strong style={{ color: 'var(--text-primary)' }}>{startIndex + 1}</strong> đến <strong style={{ color: 'var(--text-primary)' }}>{Math.min(startIndex + itemsPerPage, groupedFilteredClasses.length)}</strong> trong tổng số <strong style={{ color: 'var(--text-primary)' }}>{groupedFilteredClasses.length}</strong> lớp học
           </div>
-          
-          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-            <button 
-              className="btn btn-secondary" 
-              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+
+          <div className="pagination-buttons">
+            <button
+              className="btn btn-secondary"
+              aria-label="Trang trước" onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
               disabled={currentPage === 1}
               style={{ padding: '8px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
               <ChevronLeft size={18} />
             </button>
-            
+
             <div style={{ display: 'flex', gap: '4px' }}>
               {renderPaginationButtons()}
             </div>
-            
-            <button 
-              className="btn btn-secondary" 
-              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+
+            <button
+              className="btn btn-secondary"
+              aria-label="Trang sau" onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
               disabled={currentPage === totalPages || totalPages === 0}
               style={{ padding: '8px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
@@ -266,76 +268,76 @@ const Classes = () => {
 
       {/* Add Class Modal */}
       {showModal && (
-        <div className="modal-overlay">
+        <Modal label="Tạo lớp học" onClose={() => !saving && setShowModal(false)}>
           <div className="modal-content">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+            <div className="modal-header">
               <h2>Tạo Lớp Học Mới</h2>
-              <button className="btn btn-secondary" style={{ padding: '8px', borderRadius: '50%' }} onClick={() => setShowModal(false)}>
+              <button className="btn btn-secondary" style={{ padding: '8px', borderRadius: '50%' }} aria-label="Đóng cửa sổ" disabled={saving} onClick={() => setShowModal(false)}>
                 <X size={20} />
               </button>
             </div>
-            
+
             <form onSubmit={handleAddClass}>
-              <div style={{ display: 'flex', gap: '16px' }}>
+              <div className="form-row">
                 <div className="form-group" style={{ flex: 1 }}>
-                  <label className="form-label">Mã Lớp *</label>
-                  <input required type="text" className="form-input" placeholder="VD: 9T1" value={newClass.id} onChange={(e) => setNewClass({...newClass, id: e.target.value})} />
+                  <label className="form-label" htmlFor="classes-field-1">Mã Lớp *</label>
+                  <input id="classes-field-1" required type="text" className="form-input" placeholder="VD: 9T1" value={newClass.id} onChange={(e) => setNewClass({...newClass, id: e.target.value})} />
                 </div>
                 <div className="form-group" style={{ flex: 2 }}>
-                  <label className="form-label">Tên Lớp (Mô tả) *</label>
-                  <input required type="text" className="form-input" placeholder="VD: Toán Cơ Bản Khối 9" value={newClass.name} onChange={(e) => setNewClass({...newClass, name: e.target.value})} />
+                  <label className="form-label" htmlFor="classes-field-2">Tên Lớp (Mô tả) *</label>
+                  <input id="classes-field-2" required type="text" className="form-input" placeholder="VD: Toán Cơ Bản Khối 9" value={newClass.name} onChange={(e) => setNewClass({...newClass, name: e.target.value})} />
                 </div>
               </div>
-              
-              <div style={{ display: 'flex', gap: '16px' }}>
+
+              <div className="form-row">
                 <div className="form-group" style={{ flex: 1 }}>
-                  <label className="form-label">Khối</label>
-                  <select className="form-input" value={newClass.grade} onChange={(e) => setNewClass({...newClass, grade: e.target.value})}>
+                  <label className="form-label" htmlFor="classes-field-3">Khối</label>
+                  <select id="classes-field-3" className="form-input" value={newClass.grade} onChange={(e) => setNewClass({...newClass, grade: e.target.value})}>
                     {[6,7,8,9,10,11,12].map(g => <option key={g} value={g}>{g}</option>)}
                   </select>
                 </div>
                 <div className="form-group" style={{ flex: 2 }}>
-                  <label className="form-label">Giáo viên phụ trách</label>
-                  <input type="text" className="form-input" value={newClass.teacher} onChange={(e) => setNewClass({...newClass, teacher: e.target.value})} />
+                  <label className="form-label" htmlFor="classes-field-4">Giáo viên phụ trách</label>
+                  <input id="classes-field-4" type="text" className="form-input" value={newClass.teacher} onChange={(e) => setNewClass({...newClass, teacher: e.target.value})} />
                 </div>
               </div>
-              
+
               <div className="form-group">
-                <label className="form-label">Lịch học</label>
-                <input type="text" className="form-input" placeholder="VD: T3, T5 18:00 - 19:30" value={newClass.schedule} onChange={(e) => setNewClass({...newClass, schedule: e.target.value})} />
+                <label className="form-label" htmlFor="classes-field-5">Lịch học</label>
+                <input id="classes-field-5" type="text" className="form-input" placeholder="VD: T3, T5 18:00 - 19:30" value={newClass.schedule} onChange={(e) => setNewClass({...newClass, schedule: e.target.value})} />
               </div>
-              
+
               <div className="form-group">
-                <label className="form-label">Học phí mỗi tháng/khóa (VNĐ)</label>
-                <input type="number" className="form-input" value={newClass.tuition} onChange={(e) => setNewClass({...newClass, tuition: Number(e.target.value)})} />
+                <label className="form-label" htmlFor="classes-field-6">Học phí mỗi tháng/khóa (VNĐ)</label>
+                <input id="classes-field-6" type="number" className="form-input" value={newClass.tuition} onChange={(e) => setNewClass({...newClass, tuition: Number(e.target.value)})} />
               </div>
-              
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '32px' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Hủy</button>
+
+              <div className="form-actions">
+                <button type="button" className="btn btn-secondary" aria-label="Đóng cửa sổ" disabled={saving} onClick={() => setShowModal(false)}>Hủy</button>
                 <button type="submit" className="btn btn-primary" disabled={saving}>
                   {saving ? 'Đang lưu...' : 'Tạo Lớp'}
                 </button>
               </div>
             </form>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* Detail Modal */}
       {showDetailModal && selectedClassGroup && (
-        <div className="modal-overlay">
+        <Modal label="Chi tiết lớp học" onClose={() => setShowDetailModal(false)}>
           <div className="modal-content" style={{ maxWidth: '800px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+            <div className="modal-header">
               <h2>Chi Tiết Nhóm Lớp: {selectedClassGroup.baseName}</h2>
-              <button className="btn btn-secondary" style={{ padding: '8px', borderRadius: '50%' }} onClick={() => setShowDetailModal(false)}>
+              <button className="btn btn-secondary" style={{ padding: '8px', borderRadius: '50%' }} aria-label="Đóng cửa sổ" onClick={() => setShowDetailModal(false)}>
                 <X size={20} />
               </button>
             </div>
-            
+
             <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
               {selectedClassGroup.variants.map((v, idx) => (
-                <button 
-                  key={idx} 
+                <button
+                  key={idx}
                   className={`btn ${activeTab === idx ? 'btn-primary' : 'btn-secondary'}`}
                   style={{ borderRadius: '20px', padding: '6px 16px', fontSize: '0.9rem' }}
                   onClick={() => setActiveTab(idx)}
@@ -345,7 +347,7 @@ const Classes = () => {
               ))}
             </div>
 
-            <div className="dashboard-grid" style={{ gap: '16px', gridTemplateColumns: '1fr 1fr 1fr' }}>
+            <div className="dashboard-grid detail-stats" style={{ gap: '16px', gridTemplateColumns: '1fr 1fr 1fr' }}>
               <div className="glass-panel stat-card">
                 <div className="stat-label">Mã Lớp</div>
                 <div style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--accent-primary)' }}>{selectedClassGroup.variants[activeTab].id}</div>
@@ -363,7 +365,7 @@ const Classes = () => {
             </div>
 
             <div style={{ marginTop: '24px', border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
-              <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+              <div className="table-scroll" role="region" aria-label="Danh sách học sinh của lớp" tabIndex={0}><table className="responsive-table" style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                 <thead>
                   <tr>
                     <th style={{ backgroundColor: 'var(--bg-hover)', padding: '12px', borderBottom: '1px solid var(--border-color)' }}>STT</th>
@@ -379,21 +381,21 @@ const Classes = () => {
                   ) : (
                     enrolledStudentsGroups[activeTab].map((hs, idx) => (
                       <tr key={idx}>
-                        <td style={{ padding: '12px', borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}>{idx + 1}</td>
-                        <td style={{ padding: '12px', borderBottom: '1px solid var(--border-color)', color: 'var(--accent-primary)', fontWeight: 500 }}>{hs.id}</td>
-                        <td style={{ padding: '12px', borderBottom: '1px solid var(--border-color)', fontWeight: 500 }}>{hs.name}</td>
+                        <td data-label="STT" style={{ padding: '12px', borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}>{idx + 1}</td>
+                        <td data-label="Mã HS" style={{ padding: '12px', borderBottom: '1px solid var(--border-color)', color: 'var(--accent-primary)', fontWeight: 500 }}>{hs.id}</td>
+                        <td data-label="Họ và tên" style={{ padding: '12px', borderBottom: '1px solid var(--border-color)', fontWeight: 500 }}>{hs.name}</td>
                       </tr>
                     ))
                   )}
                 </tbody>
-              </table>
+              </table></div>
             </div>
-            
+
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '32px' }}>
-              <button type="button" className="btn btn-primary" onClick={() => setShowDetailModal(false)}>Đóng</button>
+              <button type="button" className="btn btn-primary" aria-label="Đóng cửa sổ" onClick={() => setShowDetailModal(false)}>Đóng</button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );
