@@ -1,3 +1,4 @@
+import { vietnamDate } from '../utils/date';
 import { useState, useEffect } from 'react';
 import { QrCode, RefreshCw, Plus, X, Search as SearchIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '../utils/api';
@@ -24,12 +25,15 @@ const Tuition = () => {
 
   // Modal
   const [showModal, setShowModal] = useState(false);
-  const [newTuition, setNewTuition] = useState({ studentId: '', amount: 0, method: 'Tiền mặt', status: 'Đã nộp', date: new Date().toISOString().split('T')[0] });
+  const [newTuition, setNewTuition] = useState(() => {
+    try { const saved = sessionStorage.getItem('tuition_draft'); if (saved) return JSON.parse(saved); } catch { /* Ignore invalid draft */ }
+    return { requestId: crypto.randomUUID(), classId: '', period: vietnamDate().slice(0, 7), studentId: '', amount: 0, method: 'Tiền mặt', status: 'Đã nộp', date: vietnamDate() };
+  });
+  useEffect(() => { sessionStorage.setItem('tuition_draft', JSON.stringify(newTuition)); }, [newTuition]);
   const [saving, setSaving] = useState(false);
 
   const fetchTuitionsAndClasses = async () => {
     setLoading(true);
-    setError('');
     try {
       const [tuitionRes, studentsRes, classesRes] = await Promise.all([
         api.get('/api/tuition'),
@@ -44,7 +48,7 @@ const Tuition = () => {
       
       const enrichedTuitions = tuitionRes.data.map(t => ({
           ...t,
-          classes: studentClassMap[t.studentId] || ''
+          classes: t.classId || studentClassMap[t.studentId] || ''
       }));
       setTuitions(enrichedTuitions);
       
@@ -82,7 +86,7 @@ const Tuition = () => {
     
     // Class Filter
     if (selectedClass !== 'All') {
-      result = result.filter(t => t.classes && t.classes.includes(selectedClass));
+      result = result.filter(t => t.classId === selectedClass);
     }
     
     // Status Filter
@@ -121,13 +125,17 @@ const Tuition = () => {
     try {
       const response = await api.post('/api/tuition', newTuition);
       if (response.data.success) {
+        sessionStorage.removeItem('tuition_draft');
+        if (response.data.tuition.syncStatus === 'Lỗi đồng bộ') {
+          setError('Hóa đơn đã lưu nhưng chưa đồng bộ: ' + response.data.tuition.syncError);
+        }
         setShowModal(false);
-        setNewTuition({ studentId: '', amount: 0, method: 'Tiền mặt', status: 'Đã nộp', date: new Date().toISOString().split('T')[0] });
+        setNewTuition({ requestId: crypto.randomUUID(), classId: '', period: vietnamDate().slice(0, 7), studentId: '', amount: 0, method: 'Tiền mặt', status: 'Đã nộp', date: vietnamDate() });
         fetchTuitionsAndClasses();
       }
     } catch (err) {
       console.error(err);
-      alert('Lỗi khi lập hóa đơn!');
+      setError(err.response?.data?.error || 'Chưa xác nhận được kết quả. Thử lại để tiếp tục cùng hóa đơn.');
     } finally {
       setSaving(false);
     }
@@ -277,6 +285,8 @@ const Tuition = () => {
               <th>Học Sinh</th>
               <th>Mã HS</th>
               <th>Số Tiền</th>
+              <th>Lớp / Kỳ học</th>
+              <th>Đồng bộ</th>
               <th>Ngày Thu</th>
               <th>Phương Thức</th>
               <th>Trạng Thái</th>
@@ -286,13 +296,13 @@ const Tuition = () => {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={8} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-secondary)' }}>
+                <td colSpan={10} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-secondary)' }}>
                   Đang tải dữ liệu học phí...
                 </td>
               </tr>
             ) : filteredTuitions.length === 0 ? (
               <tr>
-                <td colSpan={8} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-secondary)' }}>
+                <td colSpan={10} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-secondary)' }}>
                   Không tìm thấy hóa đơn nào phù hợp.
                 </td>
               </tr>
@@ -303,6 +313,8 @@ const Tuition = () => {
                   <td style={{ fontWeight: '500' }}>{t.studentName}</td>
                   <td style={{ color: 'var(--accent-primary)' }}>{t.studentId}</td>
                   <td style={{ color: 'var(--accent-warning)', fontWeight: '600' }}>{formatCurrency(t.amount)}</td>
+                  <td>{t.classId || 'Chưa xác định'} / {t.period || 'Dữ liệu cũ'}</td>
+                  <td><span title={t.syncError}>{t.syncStatus}</span>{['Lỗi đồng bộ', 'Chờ đồng bộ'].includes(t.syncStatus) && <button className="btn btn-secondary" disabled={saving} onClick={async () => { setSaving(true); try { const res = await api.post(`/api/tuition/${t.id}/retry`); setError(res.data.tuition.syncError || ''); await fetchTuitionsAndClasses(); } catch (err) { setError(err.response?.data?.error || 'Không thể thử lại.'); } finally { setSaving(false); } }}>Thử lại</button>}</td>
                   <td style={{ color: 'var(--text-secondary)' }}>{t.date}</td>
                   <td>{t.method}</td>
                   <td>
@@ -367,6 +379,18 @@ const Tuition = () => {
             </div>
             
             <form onSubmit={handleAddTuition}>
+              <p>Mỗi hóa đơn ghi nhận tiền cho một lớp và một kỳ học.</p>
+              <div className="form-group">
+                <label className="form-label">Lớp *</label>
+                <select required className="form-input" value={newTuition.classId} onChange={e => setNewTuition({...newTuition, classId: e.target.value})}>
+                  <option value="">Chọn lớp</option>
+                  {classesList.map(c => <option key={c.id} value={c.id}>{c.name} ({c.id})</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Kỳ học phí (tháng) *</label>
+                <input required type="month" className="form-input" value={newTuition.period} onChange={e => setNewTuition({...newTuition, period: e.target.value})} />
+              </div>
               <div className="form-group">
                 <label className="form-label">Mã Học Sinh *</label>
                 <input required type="text" className="form-input" placeholder="VD: HS2620001" value={newTuition.studentId} onChange={(e) => setNewTuition({...newTuition, studentId: e.target.value})} />
@@ -375,11 +399,11 @@ const Tuition = () => {
               <div style={{ display: 'flex', gap: '16px' }}>
                 <div className="form-group" style={{ flex: 1 }}>
                   <label className="form-label">Số tiền thu (VNĐ) *</label>
-                  <input required type="number" className="form-input" value={newTuition.amount} onChange={(e) => setNewTuition({...newTuition, amount: Number(e.target.value)})} />
+                  <input required min="1" step="1" type="number" className="form-input" value={newTuition.amount} onChange={(e) => setNewTuition({...newTuition, amount: Number(e.target.value)})} />
                 </div>
                 <div className="form-group" style={{ flex: 1 }}>
                   <label className="form-label">Ngày thu</label>
-                  <input type="date" className="form-input" value={newTuition.date} onChange={(e) => setNewTuition({...newTuition, date: e.target.value})} />
+                  <input required type="date" className="form-input" value={newTuition.date} onChange={(e) => setNewTuition({...newTuition, date: e.target.value})} />
                 </div>
               </div>
               

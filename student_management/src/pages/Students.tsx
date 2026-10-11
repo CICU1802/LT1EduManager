@@ -1,3 +1,4 @@
+import { vietnamDate } from '../utils/date';
 import { useState, useEffect } from 'react';
 import { Plus, Search as SearchIcon, Download, RefreshCw, X, ArrowUpDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '../utils/api';
@@ -26,7 +27,7 @@ const Students = () => {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [newStudent, setNewStudent] = useState({ 
     name: '', phone: '', parentName: '', parentPhone: '', dob: '', school: '', classes: '',
-    address: '', dateJoined: new Date().toISOString().split('T')[0], status: 'Đang học', notes: '' 
+    address: '', dateJoined: vietnamDate(), status: 'Đang học', notes: ''
   });
   const [saving, setSaving] = useState(false);
 
@@ -136,7 +137,7 @@ const Students = () => {
         setShowModal(false);
         setNewStudent({ 
           name: '', phone: '', parentName: '', parentPhone: '', dob: '', school: '', classes: '',
-          address: '', dateJoined: new Date().toISOString().split('T')[0], status: 'Đang học', notes: '' 
+          address: '', dateJoined: vietnamDate(), status: 'Đang học', notes: ''
         });
         fetchStudents(); // Refresh list
       }
