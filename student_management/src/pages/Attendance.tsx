@@ -35,7 +35,7 @@ const Attendance = () => {
     const fetchClasses = async () => {
       try {
         const response = await api.get('/api/classes');
-        const classList = response.data;
+        const classList = response.data.filter(c => c.kind !== 'tuition');
         setClasses(classList);
 
         const groups = {};
@@ -141,11 +141,12 @@ const Attendance = () => {
         return;
       }
 
-      await api.post('/api/attendance', {
+      const saved = await api.post('/api/attendance', {
         classId: selectedClass,
         date: attendanceDate,
-        records: recordsToSave.map(({ id, status, note }) => ({ id, status: status === 'Đi trễ' ? 'Khác' : status, note: status === 'Đi trễ' ? `Đi trễ${note ? ': ' + note : ''}` : note }))
+        records: recordsToSave.map(({ id, status, note, version }) => ({ id, version, status: status === 'Đi trễ' ? 'Khác' : status, note: status === 'Đi trễ' ? `Đi trễ${note ? ': ' + note : ''}` : note }))
       });
+      if (saved.data.versions) setStudents(prev => prev.map(s => saved.data.versions[s.id] ? {...s, version:saved.data.versions[s.id]} : s));
       setSuccessMsg('Đã lưu điểm danh thành công!');
       notify('Đã lưu điểm danh thành công.', 'success');
     } catch (err) {
