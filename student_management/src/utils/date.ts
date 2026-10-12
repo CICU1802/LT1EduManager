@@ -5,3 +5,5 @@ export function vietnamDate(date = new Date()) {
   const part = (type: string) => parts.find(p => p.type === type)?.value;
   return `${part('year')}-${part('month')}-${part('day')}`;
 }
+
+export function currentAcademicYear() { const date = vietnamDate(); const y = Number(date.slice(0,4)) - (Number(date.slice(5,7)) < 8 ? 1 : 0); return `${y}-${y+1}`; }

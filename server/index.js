@@ -1,3 +1,8 @@
+import { createDatabase } from './db/database.js';
+import { createDataService } from './db/service.js';
+import { createDataRouter } from './db/router.js';
+import { createExcelRouter } from './excel/router.js';
+import { timingSafeEqual, createHash } from 'node:crypto';
 import express from 'express';
 import { randomUUID } from 'node:crypto';
 import { createTuitionService } from './tuition.js';
@@ -9,8 +14,8 @@ import { google } from 'googleapis';
 dotenv.config();
 
 const app = express();
-app.use(cors());
-app.use(express.json());
+app.use(cors({exposedHeaders:['Content-Disposition','X-LT1-Unmapped-Rows','X-LT1-Added-Rows']}));
+app.use(express.json({limit:'4mb'}));
 
 // Test Accounts (Demo RBAC)
 const TEST_USERS = {
@@ -18,6 +23,16 @@ const TEST_USERS = {
   'vanphong': { pass: '123456', role: 'vanphong' },
   'trogiang': { pass: '123456', role: 'trogiang' }
 };
+
+if (process.env.DATA_BACKEND && !['sheets','postgres'].includes(process.env.DATA_BACKEND)) throw new Error('DATA_BACKEND must be sheets or postgres.');
+const DATABASE_ACTIVE = process.env.DATA_BACKEND === 'postgres';
+const database = createDatabase();
+if (DATABASE_ACTIVE && !database) throw new Error('DATA_BACKEND=postgres requires DATABASE_URL.');
+const dataService = database ? createDataService(database) : null;
+const configuredUsers = process.env.AUTH_USERS_JSON ? JSON.parse(process.env.AUTH_USERS_JSON) : null;
+if (DATABASE_ACTIVE && (!configuredUsers || Object.values(configuredUsers).some(u => !['admin','vanphong','trogiang'].includes(u.role) || typeof u.pass !== 'string' || u.pass.length < 12))) throw new Error('Configure strong per-user AUTH_USERS_JSON before enabling PostgreSQL.');
+const authUsers = configuredUsers || TEST_USERS;
+const equalPassword = (a,b) => timingSafeEqual(createHash('sha256').update(String(a||'')).digest(),createHash('sha256').update(String(b||'')).digest());
 
 // Internal Authentication Middleware
 app.use('/api', (req, res, next) => {
@@ -28,13 +43,13 @@ app.use('/api', (req, res, next) => {
   const serverKey = process.env.API_PASSWORD || 'trungtam123';
   
   // Fallback for old sessions that only have API_PASSWORD
-  if (!clientUser && clientKey === serverKey) {
+  if (!DATABASE_ACTIVE && !configuredUsers && !clientUser && clientKey === serverKey) {
     req.user = { username: 'admin', role: 'admin' };
     return next();
   }
 
-  if (clientUser && TEST_USERS[clientUser] && TEST_USERS[clientUser].pass === clientKey) {
-    req.user = { username: clientUser, role: TEST_USERS[clientUser].role };
+  if (clientUser && Object.hasOwn(authUsers,clientUser) && equalPassword(authUsers[clientUser].pass,clientKey)) {
+    req.user = { username: clientUser, role: authUsers[clientUser].role };
     return next();
   }
 
@@ -44,6 +59,10 @@ app.use('/api', (req, res, next) => {
 app.get('/api/auth/me', (req, res) => {
   res.json({ username: req.user.username, role: req.user.role });
 });
+
+// Excel tools are available for analysis during setup; writes require explicit PostgreSQL cutover.
+app.use('/api/data', createExcelRouter(dataService, {active:DATABASE_ACTIVE}));
+if (DATABASE_ACTIVE) app.use('/api', createDataRouter(dataService));
 
 // Load Service Account Credentials
 // The user will need to place their google-credentials.json in this directory
@@ -80,7 +99,7 @@ async function getSheetsAPI() {
 
 // Test Endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'Server is running', integrityVersion: 1, sheetsConfigured: !!process.env.SPREADSHEET_ID });
+  res.json({ status: 'Server is running', integrityVersion: 1, sheetsConfigured: !!process.env.SPREADSHEET_ID, dataBackend: DATABASE_ACTIVE ? 'postgres' : 'sheets', databaseConfigured: !!database });
 });
 
 // Get Students (Học Sinh)
@@ -586,6 +605,8 @@ app.post('/api/pending-students/:id/resolve', async (req, res) => {
     res.status(error.status || 500).json({ error: error.message });
   }
 });
+
+app.use((error, req, res, next) => { if(res.headersSent) return next(error); res.status(error.status || 500).json({error:error.status === 413 ? 'Dữ liệu vượt quá giới hạn cho phép.' : 'Yêu cầu không hợp lệ hoặc máy chủ chưa xử lý được.'}); });
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

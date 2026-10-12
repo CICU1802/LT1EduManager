@@ -1,0 +1,23 @@
+import { zipSync, strToU8 } from 'fflate';
+const escape=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+export const cell=(ref,value,extra='')=>typeof value==='number'?`<c r="${ref}" ${extra}><v>${value}</v></c>`:typeof value==='boolean'?`<c r="${ref}" t="b" ${extra}><v>${value?1:0}</v></c>`:`<c r="${ref}" t="inlineStr" ${extra}><is><t>${escape(value)}</t></is></c>`;
+export const row=(r,cells)=>`<row r="${r}" ht="24" customHeight="1">${cells.join('')}</row>`;
+export function fixture({kind='attendance',name='9T-K1',studentName='Học sinh mẫu',id='HS1',paid=1000000,mark=true,school='THCS A',blankRows=1,hidden=false}={}){
+ const headers=kind==='attendance'?[cell('A5','STT'),cell('B5','HỌ VÀ TÊN'),cell('C5','Mã HS'),cell('D5','TRƯỜNG'),cell('E5','1'),cell('F5','2')]:[cell('B5','HỌ VÀ TÊN'),cell('C5','Mã HS'),cell('D5','THỰC ĐÓNG'),cell('E5','KIỂM TRA'),cell('F5','NGÀY ĐÓNG'),cell('G5','SĐT'),cell('H5','TRƯỜNG')];
+ const data=kind==='attendance'?[cell('A7',1),cell('B7',studentName,'s="1"'),cell('C7',id),cell('D7',school),cell('E7',mark,'s="1"'),cell('F7',false)]:[cell('B7',studentName,'s="1"'),cell('C7',id),cell('D7',paid,'s="1"'),cell('E7',1500000),cell('F7',46296),cell('G7','0901234567'),cell('H7',school)];
+ const xml=`<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:H${7+blankRows}"/><sheetViews><sheetView workbookViewId="0"><pane ySplit="6" topLeftCell="A7" state="frozen"/></sheetView></sheetViews><cols><col min="2" max="2" width="32" customWidth="1"/></cols><sheetData>${row(1,[cell('D1',name)])}${row(3,[cell('D3','KHÓA 1: 01/09/2026 - 30/11/2026')])}${row(4,[cell('D4','LỊCH HỌC: T2 T3 T4 T5 T6 T7 CN')])}${row(5,headers)}${row(6,kind==='attendance'?[cell('E6',46296),cell('F6',46350)]:[])}${row(7,data)}${Array.from({length:blankRows},(_,i)=>row(8+i,[cell('B'+(8+i),'','s="1"'),cell('E'+(8+i),'','s="1"')])).join('')}</sheetData><mergeCells count="1"><mergeCell ref="D1:H1"/></mergeCells><pageMargins left="0.25" right="0.25" top="0.5" bottom="0.5" header="0.3" footer="0.3"/></worksheet>`;
+ const entries={'[Content_Types].xml':'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>',
+ '_rels/.rels':'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
+ 'xl/workbook.xml':`<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${name}" sheetId="1" r:id="rId1"${hidden?' state="hidden"':''}/></sheets></workbook>`,
+ 'xl/_rels/workbook.xml.rels':'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
+ 'xl/styles.xml':'<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><cellXfs count="2"><xf fontId="0" numFmtId="0"/><xf fontId="0" numFmtId="4"/></cellXfs></styleSheet>',
+ 'xl/worksheets/sheet1.xml':xml,'xl/drawings/drawing1.xml':'<drawing-preserved/>'};
+ return Buffer.from(zipSync(Object.fromEntries(Object.entries(entries).map(([k,v])=>[k,strToU8(v)])),{mtime:new Date('2026-01-01T00:00:00Z')}));
+}
+export async function twoClassFixture(){
+ const {unzipSync,strFromU8}=await import('fflate');const first=unzipSync(fixture()),second=unzipSync(fixture({kind:'tuition',name:'9T-HP-K1'}));
+ first['xl/worksheets/sheet2.xml']=second['xl/worksheets/sheet1.xml'];
+ first['xl/workbook.xml']=strToU8(strFromU8(first['xl/workbook.xml']).replace('</sheets>','<sheet name="9T-HP-K1" sheetId="2" r:id="rId2"/></sheets>'));
+ first['xl/_rels/workbook.xml.rels']=strToU8(strFromU8(first['xl/_rels/workbook.xml.rels']).replace('</Relationships>','<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/></Relationships>'));
+ return Buffer.from(zipSync(first,{mtime:new Date('2026-01-01T00:00:00Z')}));
+}

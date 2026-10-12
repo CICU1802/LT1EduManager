@@ -4,5 +4,6 @@ export const pageMeta: Record<string, { title: string; sub: string }> = {
   '/classes': { title: 'Lớp học & lịch', sub: 'Sắp xếp lớp, khóa học và lịch giảng dạy trong một nơi.' },
   '/attendance': { title: 'Điểm danh', sub: 'Chọn lớp, ghi nhận chuyên cần và báo học sinh mới.' },
   '/tuition': { title: 'Học phí & hóa đơn', sub: 'Theo dõi khoản thu, công nợ và trạng thái đồng bộ.' },
+  '/data': {title:'Nhập & xuất dữ liệu',sub:'Đối chiếu Excel, ghép hồ sơ và giữ mẫu quen thuộc của LT1.'},
   '/grades': { title: 'Sổ điểm', sub: 'Theo dõi kết quả học tập của học sinh.' }
 };

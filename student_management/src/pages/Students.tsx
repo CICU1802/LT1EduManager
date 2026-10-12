@@ -141,7 +141,7 @@ const Students = () => {
       }
     } catch (err) {
       console.error(err);
-      notify('Lỗi khi thêm học sinh!');
+      notify(err.response?.data?.error || 'Lỗi khi thêm học sinh!');
     } finally {
       setSaving(false);
     }
@@ -406,8 +406,8 @@ const Students = () => {
                   <input id="students-field-6" type="text" className="form-input" value={newStudent.school} onChange={(e) => setNewStudent({...newStudent, school: e.target.value})} />
                 </div>
                 <div className="form-group" style={{ flex: 1 }}>
-                  <label className="form-label" htmlFor="students-field-7">Lớp/Khối (Dự kiến)</label>
-                  <input id="students-field-7" type="text" className="form-input" value={newStudent.classes} onChange={(e) => setNewStudent({...newStudent, classes: e.target.value})} />
+                  <label className="form-label" htmlFor="students-field-7">Mã lớp đăng ký</label><datalist id="student-enrollment-codes">{Object.values(groupedClasses).flat().map(c => <option key={c.id} value={c.id}/>)}</datalist>
+                  <input list="student-enrollment-codes" id="students-field-7" type="text" className="form-input" value={newStudent.classes} onChange={(e) => setNewStudent({...newStudent, classes: e.target.value})} />
                 </div>
               </div>
               <div className="form-row">

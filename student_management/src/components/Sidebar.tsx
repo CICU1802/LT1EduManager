@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Users, BookOpen, CalendarCheck, CreditCard, GraduationCap, LogOut, X, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Users, BookOpen, CalendarCheck, CreditCard, GraduationCap, LogOut, X, ChevronRight, FileSpreadsheet } from 'lucide-react';
 import { useDialogFocus } from '../hooks/useDialogFocus';
 const links = [
   { path: '/dashboard', label: 'Tổng quan', icon: LayoutDashboard },
@@ -8,6 +8,7 @@ const links = [
   { path: '/classes', label: 'Lớp học & lịch', icon: BookOpen },
   { path: '/attendance', label: 'Điểm danh', icon: CalendarCheck },
   { path: '/tuition', label: 'Học phí', icon: CreditCard },
+  { path: '/data', label: 'Nhập & xuất Excel', icon: FileSpreadsheet },
   { path: '/grades', label: 'Sổ điểm', icon: GraduationCap }
 ];
 export default function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -22,7 +23,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
       <NavLink className="sidebar-logo" to="/dashboard" onClick={onClose}><span className="brand-mark"><GraduationCap size={25} /></span><span>LT1 <strong>EDUCATION</strong><small>Quản lý trung tâm</small></span></NavLink>
       <button className="icon-button sidebar-close" aria-label="Đóng menu" onClick={onClose}><X size={20} /></button>
       <div className="nav-caption">KHÔNG GIAN LÀM VIỆC</div>
-      <nav aria-label="Các chức năng">{links.filter(link => role !== 'trogiang' || link.path !== '/tuition').map(({path, label, icon: Icon}) => <NavLink key={path} to={path} onClick={onClose} className={({isActive}) => `nav-item ${isActive ? 'active' : ''}`}><Icon size={20} /><span>{label}</span><ChevronRight size={15} className="nav-arrow" /></NavLink>)}</nav>
+      <nav aria-label="Các chức năng">{links.filter(link => role !== 'trogiang' || !['/tuition','/data'].includes(link.path)).map(({path, label, icon: Icon}) => <NavLink key={path} to={path} onClick={onClose} className={({isActive}) => `nav-item ${isActive ? 'active' : ''}`}><Icon size={20} /><span>{label}</span><ChevronRight size={15} className="nav-arrow" /></NavLink>)}</nav>
       <div className="sidebar-note"><span className="eyebrow">LT1 EDUCATION</span><p>Mỗi học sinh.<br />Một hành trình tiến bộ.</p><span className="sidebar-note-line" /></div>
       <div className="sidebar-account"><div className="avatar">{user.slice(0, 1).toUpperCase()}</div><div><strong>{user}</strong><small>{roleName}</small></div><button className="icon-button" aria-label="Đăng xuất" title="Đăng xuất" onClick={() => { ['edu_user','edu_password','edu_role'].forEach(key => localStorage.removeItem(key)); window.location.href = '/'; }}><LogOut size={19} /></button></div>
     </div>

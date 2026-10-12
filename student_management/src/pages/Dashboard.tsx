@@ -29,7 +29,7 @@ const Dashboard = () => {
         const [studentRes, classRes, tuitionRes, pendingRes] = await Promise.all([
           api.get('/api/students'),
           api.get('/api/classes'),
-          api.get('/api/tuition'),
+          localStorage.getItem('edu_role') === 'trogiang' ? Promise.resolve({data:[]}) : api.get('/api/tuition'),
           api.get('/api/pending-students')
         ]);
 

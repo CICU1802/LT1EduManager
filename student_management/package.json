@@ -8,7 +8,8 @@
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test:ui": "node tests/responsive.cjs"
+    "test:ui": "node tests/responsive.cjs",
+    "test:excel-ui": "node tests/excel-workflows.cjs"
   },
   "dependencies": {
     "axios": "^1.20.0",

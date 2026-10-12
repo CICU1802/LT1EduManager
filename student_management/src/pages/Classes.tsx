@@ -1,5 +1,6 @@
 import { notify } from '../utils/notify';
 import Modal from '../components/Modal';
+import { currentAcademicYear } from '../utils/date';
 import { useState, useEffect } from 'react';
 import { BookOpen, Users, Clock, DollarSign, Filter, Plus, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '../utils/api';
@@ -25,7 +26,7 @@ const Classes = () => {
   const [enrolledStudentsGroups, setEnrolledStudentsGroups] = useState([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
 
-  const [newClass, setNewClass] = useState({ id: '', name: '', grade: '6', teacher: '', tuition: 0, schedule: '' });
+  const [newClass, setNewClass] = useState({ academicYear: currentAcademicYear(), id: '', name: '', grade: '6', teacher: '', tuition: 0, schedule: '' });
   const [saving, setSaving] = useState(false);
 
   const fetchClasses = async () => {
@@ -91,12 +92,12 @@ const Classes = () => {
       const response = await api.post('/api/classes', newClass);
       if (response.data.success) {
         setShowModal(false);
-        setNewClass({ id: '', name: '', grade: '6', teacher: '', tuition: 0, schedule: '' });
+        setNewClass({ academicYear: currentAcademicYear(), id: '', name: '', grade: '6', teacher: '', tuition: 0, schedule: '' });
         fetchClasses();
       }
     } catch (err) {
       console.error(err);
-      notify('Lỗi khi thêm lớp học!');
+      notify(err.response?.data?.error || 'Lỗi khi thêm lớp học!');
     } finally {
       setSaving(false);
     }
@@ -278,6 +279,7 @@ const Classes = () => {
             </div>
 
             <form onSubmit={handleAddClass}>
+              <div className="form-group"><label className="form-label" htmlFor="class-year">Năm học *</label><input id="class-year" required pattern="[0-9]{4}-[0-9]{4}" className="form-input" value={newClass.academicYear} onChange={e => setNewClass({...newClass,academicYear:e.target.value})}/></div>
               <div className="form-row">
                 <div className="form-group" style={{ flex: 1 }}>
                   <label className="form-label" htmlFor="classes-field-1">Mã Lớp *</label>

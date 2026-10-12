@@ -29,3 +29,9 @@ No live spreadsheets were changed by this code update. Authentication/role enfor
 
 - `cd server && npm test`: mocked Sheets integration tests cover paid vs unpaid, selected-class allocation, duplicate/concurrent requests, network failure before and after commit, restart-safe retries, reconciliation conflicts and reordered attendance rows.
 - `cd student_management && npm ci && npm run build && npm run lint`.
+
+## PostgreSQL and reviewed Excel exchange
+
+The **Nhập & xuất Excel** screen supports file analysis, identity matching, reviewed transactional import and template-preserving export. PostgreSQL stores operational data and import/audit history. Until a database is connected and `DATA_BACKEND=postgres` is explicitly configured, production continues using Sheets; file analysis is available without database writes.
+
+See [database setup, migration and Excel behavior](docs/DATABASE_EXCEL.md) for cutover steps, source-template scope and the handling of legacy/ambiguous payments. Original student workbooks and credentials must remain private and are not committed to this repository.

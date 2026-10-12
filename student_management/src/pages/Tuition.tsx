@@ -10,6 +10,8 @@ const Tuition = () => {
   const [filteredTuitions, setFilteredTuitions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [balances, setBalances] = useState([]);
+  const [balanceSearch, setBalanceSearch] = useState('');
 
   // Filters
   const [statusFilter, setStatusFilter] = useState('All');
@@ -37,10 +39,11 @@ const Tuition = () => {
   const fetchTuitionsAndClasses = async () => {
     setLoading(true);
     try {
-      const [tuitionRes, studentsRes, classesRes] = await Promise.all([
+      const [tuitionRes, studentsRes, classesRes, storageRes] = await Promise.all([
         api.get('/api/tuition'),
         api.get('/api/students'),
-        api.get('/api/classes')
+        api.get('/api/classes'),
+        api.get('/api/data/status').catch(() => ({data:{active:false}}))
       ]);
 
       const studentClassMap = {};
@@ -53,8 +56,9 @@ const Tuition = () => {
           classes: t.classId || studentClassMap[t.studentId] || ''
       }));
       setTuitions(enrichedTuitions);
+      if (storageRes.data.active) { const b = await api.get('/api/balances'); setBalances(b.data.filter(x => x.baseline_date).map(x => ({...x, name:studentsRes.data.find(s => s.id === x.student_id)?.name || x.student_id}))); }
 
-      const cList = classesRes.data;
+      const cList = classesRes.data.filter(c => c.kind !== 'attendance');
       setClassesList(cList);
 
       const groups = {};
@@ -371,6 +375,7 @@ const Tuition = () => {
       )}
 
       {/* Add Tuition Modal */}
+      {balances.length > 0 && <details className="glass-panel" style={{margin:'24px 0'}}><summary style={{cursor:'pointer',fontWeight:650}}>Số dư học phí theo lớp / khóa từ Excel ({balances.length} hồ sơ)</summary><p className="section-caption">Số dư đã bao gồm hóa đơn thu mới của cùng lớp. Số tiền nhập từ Excel không được cộng vào doanh thu tháng như một khoản thu mới.</p><input className="form-input" aria-label="Tìm số dư theo học sinh hoặc lớp" placeholder="Tìm học sinh, mã hoặc lớp…" value={balanceSearch} onChange={e=>setBalanceSearch(e.target.value)} style={{margin:'16px 0'}}/><div className="table-scroll"><table className="responsive-table"><thead><tr><th>Học sinh</th><th>Lớp</th><th>Mốc chốt</th><th>Thực đóng hiện tại</th></tr></thead><tbody>{balances.filter(b => `${b.name} ${b.student_id} ${b.class_id}`.toLowerCase().includes(balanceSearch.toLowerCase())).slice(0,50).map(b => <tr key={`${b.student_id}/${b.class_id}`}><td data-label="Học sinh">{b.name}<small className="cell-subtitle">{b.student_id}</small></td><td data-label="Lớp">{b.class_id}</td><td data-label="Mốc chốt">{String(b.baseline_date).slice(0,10)}</td><td data-label="Thực đóng">{formatCurrency(b.paid)}</td></tr>)}</tbody></table></div><p className="field-hint">Hiển thị tối đa 50 kết quả. Xuất Excel trong mục Nhập & xuất dữ liệu để đối chiếu toàn bộ file.</p></details>}
       {showModal && (
         <Modal label="Lập hóa đơn học phí" onClose={() => !saving && setShowModal(false)}>
           <div className="modal-content">
