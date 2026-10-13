@@ -93,3 +93,23 @@ test('One new student ID can appear across course tabs; source contacts do not o
   const student=(await service.students())[0];assert.equal(student.phone,'0999999999');assert.equal(student.parentPhone,'0888888888');assert.equal(student.importedContactPhone,'0901234567');
  }finally{await pg.close();}
 });
+
+test('Template export keeps original layout and adds full session/note detail',async()=>{
+ const {pg,service,imports}=await setup();try{
+  const p=await imports.preview(fixture(),options,'admin');await imports.commit(p.id,{revision:p.revision,decisions:apply(p)},'admin');
+  const classId='2026-2027:9T-K1';
+  await service.saveAttendance({classId,date:'2026-10-01',records:[{id:'HS1',status:'Có mặt',note:'Ghi chú không được mất',version:1}]},'admin');
+  await service.createSession({classId,date:'2026-10-01',sessionKey:'chieu',label:'Chiều',reason:'Buổi bổ sung'},'admin');
+  await service.saveAttendance({classId,date:'2026-10-01',sessionKey:'chieu',records:[{id:'HS1',status:'Đi trễ',note:'15 phút',version:0}]},'admin');
+  const output=(await imports.export(p.id,'admin')).buffer;
+  const exported=openWorkbook(output),original=openWorkbook(fixture());
+  assert.deepEqual(exported.parts['xl/styles.xml'],original.parts['xl/styles.xml']);assert.deepEqual(exported.parts['xl/drawings/drawing1.xml'],original.parts['xl/drawings/drawing1.xml']);
+  assert.equal(exported.sheets[0].rows.get(7).get(5).value,true);
+  const detail=exported.sheets.find(s=>s.name.startsWith('LT1_ChiTiet_'));assert.ok(detail);
+  const values=[...detail.rows.values()].map(r=>[...r.values()].map(c=>c.value));assert.ok(values.some(r=>r.includes('Ghi chú không được mất')));assert.ok(values.some(r=>r.includes('chieu')&&r.includes('15 phút')));
+  const roundtrip=await imports.preview(output,options,'admin');assert.ok(roundtrip.warnings.some(w=>w.sheet.startsWith('LT1_ChiTiet_')));
+  await imports.commit(roundtrip.id,{revision:roundtrip.revision,decisions:apply(roundtrip)},'admin');
+  assert.equal((await service.attendanceList(classId,'2026-10-01'))[0].note,'Ghi chú không được mất');
+  assert.equal((await service.attendanceList(classId,'2026-10-01','chieu'))[0].note,'15 phút');
+ }finally{await pg.close();}
+});

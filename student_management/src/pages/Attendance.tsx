@@ -1,453 +1,762 @@
-import { notify } from '../utils/notify';
-import { vietnamDate } from '../utils/date';
-import { useState, useEffect } from 'react';
-import { Check, X, Clock, AlertCircle, Save, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
-import api from '../utils/api';
+import { useCallback, useEffect, useRef, useState } from "react";
+import api from "../utils/api";
+import { vietnamDate } from "../utils/date";
+import { notify } from "../utils/notify";
+import { AttendanceOperations } from "./AttendanceOperations";
 
-const Attendance = () => {
-  const [classes, setClasses] = useState([]);
-  const [selectedClass, setSelectedClass] = useState('');
-  const [attendanceDate, setAttendanceDate] = useState(vietnamDate());
-
-  const [students, setStudents] = useState([]);
-  const [loadedContext, setLoadedContext] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
-
-  const [studentSearch, setStudentSearch] = useState('');
-  const [groupedClasses, setGroupedClasses] = useState({});
-  const [selectedBaseClass, setSelectedBaseClass] = useState('');
-
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 15;
-
-  // Pending student state
-  const [pendingName, setPendingName] = useState('');
-  const [pendingNote, setPendingNote] = useState('');
-  const [submittingPending, setSubmittingPending] = useState(false);
-  const [pendingSuccess, setPendingSuccess] = useState('');
-
-  // Fetch list of classes on mount
-  useEffect(() => {
-    const fetchClasses = async () => {
+const labels = [
+  "Có mặt",
+  "Học online",
+  "Đi trễ",
+  "Học bù",
+  "Vắng có phép",
+  "Vắng",
+  "Nghỉ lễ",
+];
+const normalize = (s) =>
+  s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .toLowerCase();
+const signature = (s) => JSON.stringify([s.status || null, s.note || ""]);
+const csv = (v) =>
+  '"' +
+  String(/^\s*[=+@-]/.test(String(v ?? "")) ? "'" + v : (v ?? "")).replace(
+    /"/g,
+    '""',
+  ) +
+  '"';
+function downloadCSV(rows, name) {
+  const blob = new Blob(
+    ["\uFEFF" + rows.map((r) => r.map(csv).join(",")).join("\r\n")],
+    { type: "text/csv;charset=utf-8" },
+  );
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+export default function Attendance() {
+  const [classes, setClasses] = useState([]),
+    [classId, setClassId] = useState(""),
+    [date, setDate] = useState(vietnamDate()),
+    [slot, setSlot] = useState("default");
+  const [caps, setCaps] = useState(null),
+    [sessions, setSessions] = useState([]),
+    [students, setStudents] = useState([]),
+    [baseline, setBaseline] = useState([]),
+    [loaded, setLoaded] = useState("");
+  const [loading, setLoading] = useState(false),
+    [saving, setSaving] = useState(false),
+    [error, setError] = useState(""),
+    [savedAt, setSavedAt] = useState(""),
+    [query, setQuery] = useState(""),
+    [page, setPage] = useState(1);
+  const [history, setHistory] = useState(null),
+    [pendingName, setPendingName] = useState(""),
+    [pendingNote, setPendingNote] = useState(""),
+    [sending, setSending] = useState(false),
+    [reason, setReason] = useState("");
+  const [draftOffer, setDraftOffer] = useState(null),
+    [operations, setOperations] = useState(false),
+    [revision, setRevision] = useState(0);
+  const requestRef = useRef(null),
+    reportRef = useRef(null),
+    sequence = useRef(0),
+    dirtyRef = useRef(false),
+    saveDraftRef = useRef(() => {});
+  const user = localStorage.getItem("edu_user") || "",
+    office = localStorage.getItem("edu_role") !== "trogiang";
+  const context = JSON.stringify([classId, date, slot]);
+  const draftKey = "lt1-attendance:" + user + ":" + loaded;
+  const changes = students.filter(
+    (s) =>
+      !s.isTransferred &&
+      signature(s) !== signature(baseline.find((b) => b.id === s.id) || {}),
+  );
+  const dirty = changes.length > 0;
+  const coherent = loaded === context && !loading;
+  const persist = useCallback(() => {
+    if (dirty && loaded) {
       try {
-        const response = await api.get('/api/classes');
-        const classList = response.data.filter(c => c.kind !== 'tuition');
-        setClasses(classList);
-
-        const groups = {};
-        classList.forEach(c => {
-          let baseName = c.name;
-          let khoa = 'Khóa Mặc định';
-          const match = c.name.match(/(.*?)[-\s]*([Kk]\d+(?:\s*mới)?)$/);
-          if (match) {
-              baseName = match[1].trim();
-              khoa = match[2].trim().toUpperCase();
-          }
-          if (!groups[baseName]) groups[baseName] = [];
-          groups[baseName].push({ id: c.id, khoa: khoa });
-        });
-        setGroupedClasses(groups);
-
-        const baseKeys = Object.keys(groups);
-        if (baseKeys.length > 0) {
-          const firstBase = baseKeys[0];
-          setSelectedBaseClass(firstBase);
-          setSelectedClass(groups[firstBase][0].id);
-        }
-      } catch (err) {
-        console.error('Error fetching classes:', err);
-        setError('Không thể tải danh sách lớp học.');
+        localStorage.setItem(
+          draftKey,
+          JSON.stringify({
+            students,
+            baseline,
+            request: requestRef.current,
+            updatedAt: new Date().toISOString(),
+          }),
+        );
+        return true;
+      } catch {
+        setError(
+          "Không lưu được bản nháp trên thiết bị. Hãy lưu trước khi rời trang.",
+        );
+        return false;
+      }
+    }
+    return true;
+  }, [dirty, loaded, draftKey, students, baseline]);
+  useEffect(() => {
+    dirtyRef.current = dirty;
+    saveDraftRef.current = persist;
+  });
+  useEffect(() => {
+    Promise.all([
+      api.get("/api/classes"),
+      api.get("/api/attendance/capabilities"),
+    ])
+      .then(([a, b]) => {
+        setClasses(a.data);
+        setCaps(b.data);
+        if (a.data.length) setClassId(a.data[0].id);
+      })
+      .catch(() => setError("Không tải được danh mục hoặc phiên bản máy chủ."));
+  }, []);
+  useEffect(() => {
+    if (dirty && !draftOffer) persist();
+    else if (coherent && !dirty && !draftOffer && loaded)
+      localStorage.removeItem(draftKey);
+  }, [persist, coherent, dirty, draftKey, loaded, draftOffer]);
+  useEffect(() => {
+    const unload = (e) => {
+      if (dirtyRef.current) {
+        saveDraftRef.current();
+        e.preventDefault();
+        e.returnValue = "";
       }
     };
-    fetchClasses();
+    const click = (e) => {
+      const link = e.target.closest?.("a[href]");
+      if (
+        dirtyRef.current &&
+        link &&
+        !window.confirm(
+          "Có thay đổi chưa lưu. Bản nháp được giữ trên thiết bị. Rời trang?",
+        )
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    window.addEventListener("beforeunload", unload);
+    document.addEventListener("click", click, true);
+    return () => {
+      window.removeEventListener("beforeunload", unload);
+      document.removeEventListener("click", click, true);
+    };
   }, []);
-
-  // Fetch students when class or date changes
-  const loadAttendance = async () => {
-    if (!selectedClass) return;
-
-    const classInfo = classes.find(c => c.id === selectedClass);
-    if (classInfo && classInfo.schedule) {
-       const dow = new Date(`${attendanceDate}T12:00:00Z`).getUTCDay(); // 0-6
-       const map = {
-          0: /(CN|Chủ nhật|Chu nhat)/i,
-          1: /(T2|Thứ 2|Thu 2)/i,
-          2: /(T3|Thứ 3|Thu 3)/i,
-          3: /(T4|Thứ 4|Thu 4)/i,
-          4: /(T5|Thứ 5|Thu 5)/i,
-          5: /(T6|Thứ 6|Thu 6)/i,
-          6: /(T7|Thứ 7|Thu 7)/i,
-       };
-       if (!map[dow].test(classInfo.schedule)) {
-          setError(`Lớp không có ca học vào thời gian này (Lịch học: ${classInfo.schedule}).`);
-          setStudents([]);
-          return;
-       }
-    }
-
+  const load = useCallback(async () => {
+    if (!classId || !date || !caps) return;
+    const seq = ++sequence.current;
     setLoading(true);
-    setError('');
-    setSuccessMsg('');
+    setError("");
+    setHistory(null);
+    setDraftOffer(null);
     try {
-      const response = await api.get(`/api/attendance/class/${selectedClass}?date=${attendanceDate}`);
-      setStudentSearch('');
-      setStudents(response.data.map(s => s.status === 'Khác' && /^Đi trễ(?:$|: )/.test(s.note || '') ? { ...s, status: 'Đi trễ', note: s.note.replace(/^Đi trễ(?:: )?/, '') } : s));
-      setLoadedContext(`${selectedClass}|${attendanceDate}`);
-      setCurrentPage(1); // Reset page on data load
-    } catch (err) {
-      console.error(err);
-      setError(err.response?.data?.error || 'Lỗi tải danh sách điểm danh.');
+      const b = caps.sessions
+        ? await api.get("/api/attendance/sessions", {
+            params: { classId, date },
+          })
+        : { data: [{ session_key: "default", label: "Buổi thường" }] };
+      if (seq !== sequence.current) return;
+      setSessions(b.data);
+      const a = await api.get(
+        `/api/attendance/class/${encodeURIComponent(classId)}`,
+        { params: { date, sessionKey: slot } },
+      );
+      if (seq !== sequence.current) return;
+      const rows = a.data.map((s) =>
+        s.status === "Khác" && /^Đi trễ(?:$|: )/.test(s.note || "")
+          ? {
+              ...s,
+              status: "Đi trễ",
+              note: s.note.replace(/^Đi trễ(?:: )?/, ""),
+            }
+          : s,
+      );
+      setStudents(rows);
+      setBaseline(rows);
+      setLoaded(context);
+      setSessions(b.data);
+      setPage(1);
+      setQuery("");
+      setSavedAt("");
+      requestRef.current = null;
+      try {
+        const draft = JSON.parse(
+          localStorage.getItem("lt1-attendance:" + user + ":" + context) ||
+            "null",
+        );
+        if (draft) setDraftOffer(draft);
+      } catch {}
+    } catch (e) {
+      if (seq === sequence.current) {
+        setError(e.response?.data?.error || "Không tải được điểm danh.");
+        setLoaded("");
+        setStudents([]);
+      }
     } finally {
-      setLoading(false);
+      if (seq === sequence.current) setLoading(false);
     }
-  };
-
-  const handleBaseClassChange = (e) => {
-    const val = e.target.value;
-    setSelectedBaseClass(val);
-    if (groupedClasses[val] && groupedClasses[val].length > 0) {
-      setSelectedClass(groupedClasses[val][0].id);
-    } else {
-      setSelectedClass('');
+  }, [classId, date, slot, caps, context, user]);
+  useEffect(() => {
+    const requestSequence = sequence;
+    load();
+    return () => {
+      requestSequence.current++;
+    };
+  }, [load, revision]);
+  function changeContext(fn) {
+    if (
+      dirty &&
+      !window.confirm(
+        "Lưu bản nháp và chuyển buổi? Chọn Hủy để tiếp tục chỉnh sửa.",
+      )
+    )
+      return;
+    if (!persist()) return;
+    fn();
+  }
+  function reload() {
+    if (
+      dirty &&
+      !window.confirm("Tải dữ liệu mới để đối chiếu? Bản nháp sẽ được giữ.")
+    )
+      return;
+    if (!persist()) return;
+    setRevision((v) => v + 1);
+  }
+  function restore() {
+    const d = draftOffer;
+    const edited = d.students.filter(
+      (s) =>
+        signature(s) !== signature(d.baseline.find((b) => b.id === s.id) || {}),
+    );
+    let conflict = false;
+    const restored = students.map((s) => {
+      const old = edited.find((x) => x.id === s.id);
+      if (!old || s.isTransferred) return s;
+      const base = d.baseline.find((x) => x.id === s.id);
+      if (base?.version !== s.version) {
+        if (signature(old) !== signature(s)) conflict = true;
+        return s;
+      }
+      return { ...s, status: old.status, note: old.note };
+    });
+    if (conflict) {
+      setError(
+        "Bản nháp có dòng đã bị sửa. Tải bản nháp để đối chiếu rồi nhập lại; chưa khôi phục để tránh mất nội dung.",
+      );
+      return;
     }
+    setStudents(restored);
+    setDraftOffer(null);
+    requestRef.current = d.request || null;
+  }
+  const mark = (id, patch) => {
+    requestRef.current = null;
+    setStudents((list) =>
+      list.map((s) => (s.id === id ? { ...s, ...patch } : s)),
+    );
   };
-
-  const handleStatusChange = (studentId, newStatus) => {
-    setStudents(prev => prev.map(s => s.id === studentId ? { ...s, status: newStatus } : s));
-  };
-
-  const handleNoteChange = (studentId, note) => {
-    setStudents(prev => prev.map(s => s.id === studentId ? { ...s, note } : s));
-  };
-
-  const saveAttendance = async () => {
+  async function save() {
+    if (!coherent || !dirty || saving || draftOffer) return;
+    const missing = students.filter(
+      (s) => !s.isTransferred && !s.status,
+    ).length;
+    if (
+      missing &&
+      !window.confirm(
+        `Còn ${missing} học sinh chưa điểm danh. Lưu phần đã chỉnh sửa?`,
+      )
+    )
+      return;
+    const payload = {
+      classId,
+      date,
+      sessionKey: slot,
+      reason,
+      records: changes.map(({ id, status, note, version }) => ({
+        id,
+        status,
+        note,
+        version,
+      })),
+    };
+    const payloadText = JSON.stringify(payload);
+    if (requestRef.current?.payload !== payloadText)
+      requestRef.current = { id: crypto.randomUUID(), payload: payloadText };
+    persist();
     setSaving(true);
-    setError('');
-    setSuccessMsg('');
+    setError("");
     try {
-      if (loadedContext !== `${selectedClass}|${attendanceDate}`) {
-        setError('Lớp hoặc ngày đã đổi. Vui lòng tải lại danh sách trước khi lưu.');
-        return;
-      }
-      // Filter out students who haven't been marked yet
-      const recordsToSave = students.filter(s => !s.isTransferred && s.status !== null);
-      if (recordsToSave.length === 0) {
-        setError('Vui lòng điểm danh ít nhất 1 học sinh trước khi lưu.');
-        setSaving(false);
-        return;
-      }
-
-      const saved = await api.post('/api/attendance', {
-        classId: selectedClass,
-        date: attendanceDate,
-        records: recordsToSave.map(({ id, status, note, version }) => ({ id, version, status: status === 'Đi trễ' ? 'Khác' : status, note: status === 'Đi trễ' ? `Đi trễ${note ? ': ' + note : ''}` : note }))
+      const r = await api.post("/api/attendance", {
+        ...payload,
+        requestId: requestRef.current.id,
       });
-      if (saved.data.versions) setStudents(prev => prev.map(s => saved.data.versions[s.id] ? {...s, version:saved.data.versions[s.id]} : s));
-      setSuccessMsg('Đã lưu điểm danh thành công!');
-      notify('Đã lưu điểm danh thành công.', 'success');
-    } catch (err) {
-      console.error(err);
-      setError(err.response?.data?.error || 'Lỗi khi lưu điểm danh.');
+      const versions = r.data.versions || {};
+      const rows = students.map((s) =>
+        Object.hasOwn(versions, s.id) ? { ...s, version: versions[s.id] } : s,
+      );
+      setStudents(rows);
+      setBaseline(rows);
+      setSavedAt(r.data.savedAt || new Date().toISOString());
+      localStorage.removeItem(draftKey);
+      setDraftOffer(null);
+      requestRef.current = null;
+      notify("Đã lưu điểm danh và ghi chú.", "success");
+      try {
+        const verify = await api.get(
+          `/api/attendance/class/${encodeURIComponent(classId)}`,
+          { params: { date, sessionKey: slot } },
+        );
+        if (
+          changes.some((s) => {
+            const actual = verify.data.find((x) => x.id === s.id);
+            return !actual || actual.version !== versions[s.id];
+          })
+        )
+          setError(
+            "Đã lưu, nhưng dữ liệu vừa có thay đổi khác. Tải lại để đối chiếu.",
+          );
+      } catch {
+        setError(
+          "Máy chủ đã xác nhận lưu. Chưa đọc lại được để đối chiếu; hãy tải lại khi kết nối ổn định.",
+        );
+      }
+    } catch (e) {
+      setError(
+        e.response?.data?.error ||
+          "Chưa xác nhận được kết quả. Giữ nguyên bản nháp và bấm Lưu lại để kiểm tra cùng yêu cầu.",
+      );
     } finally {
       setSaving(false);
     }
-  };
-
-  const submitPendingStudent = async () => {
-    if (!pendingName.trim()) {
-      setError('Vui lòng nhập tên học sinh mới.');
-      return;
-    }
-
-    setSubmittingPending(true);
-    setPendingSuccess('');
-    setError('');
-
+  }
+  async function report() {
+    if (!coherent || !pendingName.trim()) return;
+    setSending(true);
     try {
-      const classInfo = classes.find(c => c.id === selectedClass);
-      const className = classInfo ? classInfo.name : selectedClass;
-
-      await api.post('/api/pending-students', {
-        date: attendanceDate,
-        className: className,
-        studentName: pendingName,
-        note: pendingNote
+      const payload = {
+        classId,
+        className: classes.find((c) => c.id === classId)?.name,
+        date,
+        sessionKey: slot,
+        studentName: pendingName.trim(),
+        note: pendingNote,
+      };
+      const text = JSON.stringify(payload);
+      if (reportRef.current?.payload !== text)
+        reportRef.current = { id: crypto.randomUUID(), payload: text };
+      const r = await api.post("/api/pending-students", {
+        ...payload,
+        requestId: reportRef.current.id,
       });
-
-      setPendingSuccess('Đã báo cáo học sinh mới thành công! Văn phòng sẽ xử lý sớm.');
-      setPendingName('');
-      setPendingNote('');
-
-      setTimeout(() => setPendingSuccess(''), 5000);
-    } catch (err) {
-      console.error(err);
-      setError(err.response?.data?.error || 'Lỗi khi báo cáo học sinh.');
+      setPendingName("");
+      setPendingNote("");
+      reportRef.current = null;
+      notify(
+        r.data.duplicate
+          ? "Báo cáo này đã có trong danh sách chờ xử lý."
+          : "Đã gửi báo cáo cho văn phòng.",
+        "success",
+      );
+    } catch (e) {
+      setError(e.response?.data?.error || "Gửi chưa thành công. Hãy thử lại.");
     } finally {
-      setSubmittingPending(false);
+      setSending(false);
     }
-  };
-
-  const presentCount = students.filter(s => !s.isTransferred && s.status === 'Có mặt').length;
-  const absentCount = students.filter(s => !s.isTransferred && s.status === 'Vắng').length;
-
-  const filteredStudents = students.filter(s =>
-    !studentSearch ||
-    (s.name && s.name.toLowerCase().includes(studentSearch.toLowerCase())) ||
-    (s.id && s.id.toLowerCase().includes(studentSearch.toLowerCase()))
-  );
-
-
-  // Pagination logic
-  const totalPages = Math.ceil(filteredStudents.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedStudents = filteredStudents.slice(startIndex, startIndex + itemsPerPage);
-
-  const renderPaginationButtons = () => {
-    let pages = [];
-    if (totalPages <= 5) {
-      for (let i = 1; i <= totalPages; i++) pages.push(i);
-    } else {
-      if (currentPage <= 3) {
-        pages = [1, 2, 3, 4, 5];
-      } else if (currentPage >= totalPages - 2) {
-        pages = [totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
-      } else {
-        pages = [currentPage - 2, currentPage - 1, currentPage, currentPage + 1, currentPage + 2];
-      }
-    }
-
-    return pages.map(pageNum => (
-      <button
-        key={pageNum}
-        className={`btn ${currentPage === pageNum ? 'btn-primary' : 'btn-secondary'}`}
-        style={{
-          padding: '8px',
-          minWidth: '36px',
-          height: '36px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          borderRadius: '8px',
-          fontWeight: currentPage === pageNum ? 'bold' : 'normal'
-        }}
-        onClick={() => setCurrentPage(pageNum)}
-      >
-        {pageNum}
-      </button>
-    ));
-  };
-
+  }
+  const active = students.filter((s) => !s.isTransferred),
+    count = (s) => active.filter((x) => x.status === s).length;
+  const filtered = students.filter((s) =>
+      normalize(s.name + " " + s.id).includes(normalize(query)),
+    ),
+    pages = Math.max(1, Math.ceil(filtered.length / 15)),
+    visible = filtered.slice((page - 1) * 15, page * 15);
   return (
     <div className="fade-in">
       <div className="glass-panel attendance-selector">
-        <div style={{ flex: '1', minWidth: '200px' }}>
-          <label className="form-label" htmlFor="attendance-class">Chọn lớp học (Gõ để tìm kiếm)</label>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <input
-              type="text"
-              id="attendance-class"
-              list="base-classes-list"
-              className="form-input"
-              style={{ flex: '2' }}
-              value={selectedBaseClass}
-              onChange={handleBaseClassChange}
-              placeholder="Nhập tên lớp..."
-            />
-            <datalist id="base-classes-list">
-              {Object.keys(groupedClasses).map(baseName => (
-                <option key={baseName} value={baseName} />
-              ))}
-            </datalist>
-
-            <select aria-label="Khóa học"
-              className="form-input"
-              style={{ flex: '1' }}
-              value={selectedClass}
-              onChange={(e) => setSelectedClass(e.target.value)}
-              disabled={!groupedClasses[selectedBaseClass]}
-            >
-              {(groupedClasses[selectedBaseClass] || []).map(k => (
-                <option key={k.id} value={k.id}>{k.khoa}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <div>
-          <label className="form-label" htmlFor="attendance-field-1">Ngày điểm danh</label>
-          <input id="attendance-field-1" type="date" className="form-input" value={attendanceDate} onChange={(e) => setAttendanceDate(e.target.value)} />
-        </div>
-        <button className="btn btn-primary" style={{ marginTop: '24px' }} onClick={loadAttendance} disabled={loading}>
-          {loading ? 'Đang tải...' : 'Tải danh sách'}
+        <label>
+          Lớp / khóa
+          <select
+            className="form-input"
+            value={classId}
+            disabled={saving}
+            onChange={(e) =>
+              changeContext(() => {
+                setClassId(e.target.value);
+                setSlot("default");
+              })
+            }
+          >
+            <option value="">Chọn lớp</option>
+            {classes.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} · {c.id}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Ngày điểm danh
+          <input
+            className="form-input"
+            type="date"
+            value={date}
+            max={vietnamDate()}
+            disabled={saving}
+            onChange={(e) =>
+              changeContext(() => {
+                setDate(e.target.value);
+                setSlot("default");
+              })
+            }
+          />
+        </label>
+        <label>
+          Ca học
+          <select
+            className="form-input"
+            value={slot}
+            disabled={saving || !caps?.sessions}
+            onChange={(e) => changeContext(() => setSlot(e.target.value))}
+          >
+            {(sessions.length
+              ? sessions
+              : [{ session_key: "default", label: "Buổi thường" }]
+            ).map((s) => (
+              <option key={s.session_key} value={s.session_key}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          className="btn btn-secondary"
+          disabled={loading || saving}
+          onClick={reload}
+        >
+          {loading ? "Đang tải…" : "Tải lại để đối chiếu"}
         </button>
       </div>
-
       {error && (
-        <div className="glass-panel" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', borderColor: 'var(--accent-danger)', marginBottom: '24px' }}>
-          <p role="alert" style={{ color: 'var(--accent-danger)', display: 'flex', alignItems: 'center', gap: '8px' }}><AlertCircle size={18}/> {error}</p>
+        <p className="login-error" role="alert">
+          {error}
+        </p>
+      )}
+      {draftOffer && (
+        <div className="glass-panel">
+          <p>
+            Có bản nháp trên thiết bị từ {draftOffer.updatedAt}. Chỉ khôi phục
+            các dòng chưa bị người khác sửa.
+          </p>
+          <button className="btn" onClick={restore}>
+            Khôi phục bản nháp
+          </button>
+          <button
+            className="btn"
+            onClick={() =>
+              downloadCSV(
+                [
+                  ["Mã", "Tên", "Trạng thái", "Ghi chú"],
+                  ...draftOffer.students.map((s) => [
+                    s.id,
+                    s.name,
+                    s.status,
+                    s.note,
+                  ]),
+                ],
+                "ban-nhap-diem-danh.csv",
+              )
+            }
+          >
+            Tải bản nháp để đối chiếu
+          </button>
+          <button
+            className="btn"
+            onClick={() => {
+              if (window.confirm("Bỏ bản nháp trên thiết bị?")) {
+                localStorage.removeItem(draftKey);
+                setDraftOffer(null);
+              }
+            }}
+          >
+            Bỏ bản nháp
+          </button>
         </div>
       )}
-
-      {successMsg && (
-        <div className="glass-panel" style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', borderColor: 'var(--accent-success)', marginBottom: '24px' }}>
-          <p style={{ color: 'var(--accent-success)', display: 'flex', alignItems: 'center', gap: '8px' }}><Check size={18}/> {successMsg}</p>
-        </div>
-      )}
-
-      {students.length > 0 && (
-        <div className="glass-panel fade-in">
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-            <h2>Danh sách lớp</h2>
-
-            <div className="attendance-summary">
-              <input
-                type="text"
-                className="form-input"
-                placeholder="Tìm tên hoặc mã HS..." aria-label="Tìm tên hoặc mã HS..."
-                value={studentSearch}
-                onChange={(e) => { setStudentSearch(e.target.value); setCurrentPage(1); }}
-                style={{ width: '250px' }}
-              />
-              <span className="badge badge-success">Có mặt: {presentCount}</span>
-              <span className="badge badge-danger">Vắng: {absentCount}</span>
-            </div>
+      {coherent && (
+        <section className="glass-panel">
+          <h2>
+            {classes.find((c) => c.id === classId)?.name} · {date} ·{" "}
+            {sessions.find((s) => s.session_key === slot)?.label || slot}
+          </h2>
+          <p aria-live="polite">
+            {dirty
+              ? `${changes.length} học sinh có thay đổi chưa lưu · bản nháp trên thiết bị`
+              : savedAt
+                ? `Đã lưu lúc ${new Date(savedAt).toLocaleTimeString("vi-VN")}`
+                : "Dữ liệu đã tải từ máy chủ"}
+          </p>
+          <div className="attendance-summary">
+            {labels.map((s) => (
+              <span className="badge" key={s}>
+                {s}: {count(s)}
+              </span>
+            ))}
+            <span className="badge">
+              Sĩ số: {count("Có mặt") + count("Học online") + count("Đi trễ") + count("Học bù")}
+            </span>
+            <span className="badge">
+              Chưa điểm danh: {active.filter((s) => !s.status).length}
+            </span>
           </div>
-
-          <div className="table-scroll" role="region" aria-label="Danh sách điểm danh" tabIndex={0}><table className="responsive-table" style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                <th>STT</th>
-                <th>Họ và Tên</th>
-                <th>Mã HS</th>
-                <th style={{ textAlign: 'center' }}>Điểm danh</th>
-                <th>Ghi chú</th>
-              </tr>
-            </thead>
-            <tbody>
-              {paginatedStudents.map((hs, i) => (
-                <tr key={`${hs.id}-${hs.rowIndex || i}`}>
-                  <td data-label="STT" style={{ color: 'var(--text-secondary)', opacity: hs.isTransferred ? 0.5 : 1 }}>{startIndex + i + 1}</td>
-                  <td data-label="Họ và tên" style={{ fontWeight: '500', opacity: hs.isTransferred ? 0.6 : 1 }}>
-                    {hs.isTransferred ? <del>{hs.name}</del> : hs.name}
-                    {hs.isTransferred && <span className="badge badge-secondary" style={{ marginLeft: '8px', fontSize: '0.75rem' }}>Đã chuyển</span>}
-                  </td>
-                  <td data-label="Mã HS" style={{ color: 'var(--text-secondary)', opacity: hs.isTransferred ? 0.5 : 1 }}>{hs.id}</td>
-                  <td data-label="Điểm danh" style={{ opacity: hs.isTransferred ? 0.5 : 1 }}>
-                    <div className="attendance-controls">
-                      <button
-                        onClick={() => handleStatusChange(hs.id, 'Có mặt')}
-                        className={`btn ${hs.status === 'Có mặt' ? 'btn-primary' : 'btn-secondary'}`}
-                        style={{ padding: '8px', borderRadius: '50%', background: hs.status === 'Có mặt' ? 'var(--accent-success)' : '' }}
-                        aria-label={`Có mặt: ${hs.name}`} title="Có mặt"
-                        disabled={hs.isTransferred}
-                      >
-                        <Check size={16} /><span>Có mặt</span>
-                      </button>
-                      <button
-                        onClick={() => handleStatusChange(hs.id, 'Vắng')}
-                        className={`btn ${hs.status === 'Vắng' ? 'btn-primary' : 'btn-secondary'}`}
-                        style={{ padding: '8px', borderRadius: '50%', background: hs.status === 'Vắng' ? 'var(--accent-danger)' : '' }}
-                        aria-label={`Vắng: ${hs.name}`} title="Vắng"
-                        disabled={hs.isTransferred}
-                      >
-                        <X size={16} /><span>Vắng</span>
-                      </button>
-                      <button
-                        onClick={() => handleStatusChange(hs.id, 'Đi trễ')}
-                        className={`btn ${hs.status === 'Đi trễ' ? 'btn-primary' : 'btn-secondary'}`}
-                        style={{ padding: '8px', borderRadius: '50%', background: hs.status === 'Đi trễ' ? 'var(--accent-warning)' : '' }}
-                        aria-label={`Đi trễ: ${hs.name}`} title="Đi trễ"
-                        disabled={hs.isTransferred}
-                      >
-                        <Clock size={16} /><span>Đi trễ</span>
-                      </button>
-                    </div>
-                  </td>
-                  <td data-label="Ghi chú" style={{ opacity: hs.isTransferred ? 0.5 : 1 }}>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="Ghi chú..." aria-label="Ghi chú..."
-                      style={{ padding: '8px', fontSize: '0.85rem' }}
-                      value={hs.note || ''}
-                      onChange={(e) => handleNoteChange(hs.id, e.target.value)}
-                      disabled={hs.isTransferred}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table></div>
-
-          {/* Pagination Controls */}
-          {students.length > 0 && (
-            <div className="pagination">
-              <div className="pagination-info" aria-live="polite">
-                Hiển thị <strong style={{ color: 'var(--text-primary)' }}>{startIndex + 1}</strong> đến <strong style={{ color: 'var(--text-primary)' }}>{Math.min(startIndex + itemsPerPage, filteredStudents.length)}</strong> trong tổng số <strong style={{ color: 'var(--text-primary)' }}>{filteredStudents.length}</strong> học sinh
-              </div>
-
-              <div className="pagination-buttons">
-                <button
-                  className="btn btn-secondary"
-                  aria-label="Trang trước" onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                  disabled={currentPage === 1}
-                  style={{ padding: '8px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                >
-                  <ChevronLeft size={18} />
-                </button>
-
-                <div style={{ display: 'flex', gap: '4px' }}>
-                  {renderPaginationButtons()}
-                </div>
-
-                <button
-                  className="btn btn-secondary"
-                  aria-label="Trang sau" onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                  disabled={currentPage === totalPages || totalPages === 0}
-                  style={{ padding: '8px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                >
-                  <ChevronRight size={18} />
-                </button>
-              </div>
-            </div>
-          )}
-
-          <div className="attendance-save">
-            <button className="btn btn-primary" onClick={saveAttendance} disabled={saving}>
-              {saving ? <span className="spin"><RefreshCw size={18}/></span> : <Save size={18} />}
-              <span style={{ marginLeft: '8px' }}>{saving ? 'Đang lưu...' : 'Lưu Điểm Danh'}</span>
+          <div className="toolbar-filters">
+            <input
+              className="form-input"
+              placeholder="Tìm tên hoặc mã HS"
+              aria-label="Tìm tên hoặc mã HS"
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setPage(1);
+              }}
+            />
+            <button
+              className="btn btn-secondary"
+              disabled={saving || !!draftOffer}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Đánh dấu Có mặt cho học sinh chưa điểm danh trong toàn bộ danh sách?",
+                  )
+                ) {
+                  requestRef.current = null;
+                  setStudents((list) =>
+                    list.map((s) =>
+                      !s.isTransferred && !s.status
+                        ? { ...s, status: "Có mặt" }
+                        : s,
+                    ),
+                  );
+                }
+              }}
+            >
+              Có mặt cho người chưa đánh dấu
             </button>
           </div>
-
-          {/* Report New Student Form */}
-          <div style={{ marginTop: '48px', paddingTop: '24px', borderTop: '1px solid var(--border-color)' }}>
-            <h3 style={{ marginBottom: '16px', color: 'var(--text-secondary)' }}>Có học sinh mới phát sinh chưa có tên?</h3>
-            {pendingSuccess && (
-              <div style={{ padding: '12px', background: 'rgba(16, 185, 129, 0.1)', color: 'var(--accent-success)', borderRadius: '8px', marginBottom: '16px' }}>
-                {pendingSuccess}
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-              <div style={{ flex: '1', minWidth: '200px' }}>
-                <label className="form-label" htmlFor="attendance-field-2">Tên học sinh mới</label>
-                <input id="attendance-field-2" type="text" className="form-input" placeholder="Ví dụ: Nguyễn Văn A" value={pendingName} onChange={e => setPendingName(e.target.value)} />
-              </div>
-              <div style={{ flex: '1', minWidth: '200px' }}>
-                <label className="form-label" htmlFor="attendance-field-3">SĐT / Ghi chú</label>
-                <input id="attendance-field-3" type="text" className="form-input" placeholder="SĐT phụ huynh hoặc ghi chú thêm" value={pendingNote} onChange={e => setPendingNote(e.target.value)} />
-              </div>
-              <button className="btn btn-secondary" onClick={submitPendingStudent} disabled={submittingPending || !pendingName.trim()}>
-                {submittingPending ? 'Đang gửi...' : 'Gửi báo cáo lên Văn phòng'}
-              </button>
-            </div>
+          <div className="table-scroll">
+            <table className="responsive-table">
+              <thead>
+                <tr>
+                  <th>Học sinh</th>
+                  <th>Trạng thái</th>
+                  <th>Ghi chú</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((s) => (
+                  <tr key={s.id}>
+                    <td data-label="Học sinh">
+                      {s.name}
+                      <small style={{ display: "block" }}>
+                        {s.id}{" "}
+                        {s.isTransferred ? "· Ngoài thời gian đăng ký" : ""}{" "}
+                        {s.isMakeup ? "· Học bù" : ""}
+                      </small>
+                    </td>
+                    <td data-label="Trạng thái">
+                      <select
+                        className="form-input"
+                        aria-label={`Trạng thái ${s.name}`}
+                        disabled={saving || !!draftOffer || s.isTransferred}
+                        value={s.status || ""}
+                        onChange={(e) =>
+                          mark(s.id, { status: e.target.value || null })
+                        }
+                      >
+                        <option value="">Chưa điểm danh</option>
+                        {s.status === "Khác" && (
+                          <option value="Khác" disabled>Dữ liệu cũ cần quy đổi</option>
+                        )}
+                        {labels.map((v) => (
+                          <option key={v}>{v}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td data-label="Ghi chú">
+                      <input
+                        className="form-input"
+                        maxLength={2000}
+                        aria-label={`Ghi chú ${s.name}`}
+                        value={s.note || ""}
+                        disabled={saving || !!draftOffer || s.isTransferred}
+                        onChange={(e) => mark(s.id, { note: e.target.value })}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </div>
+          {!filtered.length && (
+            <p>
+              Không có học sinh phù hợp. Bạn vẫn có thể báo cáo học sinh mới bên
+              dưới.
+            </p>
+          )}
+          <div className="pagination">
+            <button
+              className="btn"
+              disabled={page === 1}
+              onClick={() => setPage((p) => p - 1)}
+            >
+              Trang trước
+            </button>
+            <span>
+              Trang {page}/{pages} · {filtered.length} học sinh
+            </span>
+            <button
+              className="btn"
+              disabled={page >= pages}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Trang sau
+            </button>
+          </div>
+          <label>
+            Lý do chỉnh sửa (nếu có)
+            <input
+              className="form-input"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              disabled={saving}
+            />
+          </label>
+          <div className="form-actions">
+            <button
+              className="btn btn-primary"
+              disabled={!dirty || saving || !!draftOffer}
+              onClick={save}
+            >
+              {saving ? "Đang lưu…" : "Lưu điểm danh"}
+            </button>
+            <button
+              className="btn"
+              onClick={async () => {
+                try {
+                  const r = await api.get("/api/attendance/history", {
+                    params: { classId, date, sessionKey: slot },
+                  });
+                  setHistory(r.data);
+                } catch {
+                  setError("Không đọc được lịch sử.");
+                }
+              }}
+            >
+              Lịch sử sửa
+            </button>
+            {office && caps.operations && (
+              <button
+                className="btn"
+                onClick={async () => {
+                  try {
+                    const r = await api.get("/api/attendance/report", {
+                      params: { classId },
+                    });
+                    downloadCSV(
+                      [
+                        ["Tên", "Mã HS", "Ngày", "Ca", "Trạng thái", "Ghi chú"],
+                        ...r.data.map((s) => [
+                          s.name,
+                          s.student_id,
+                          String(s.attendance_date).slice(0, 10),
+                          s.session_key,
+                          s.status,
+                          s.note,
+                        ]),
+                      ],
+                      "so-diem-danh-chi-tiet.csv",
+                    );
+                  } catch {
+                    setError("Không xuất được báo cáo.");
+                  }
+                }}
+              >
+                Xuất sổ chi tiết CSV
+              </button>
+            )}
+          </div>
+          {history && (
+            <div>
+              <h3>Lịch sử thay đổi</h3>
+              {!history.length ? (
+                <p>Chưa có lịch sử.</p>
+              ) : (
+                history.map((h, i) => (
+                  <p key={i}>
+                    {h.actor} · {new Date(h.created_at).toLocaleString("vi-VN")}{" "}
+                    · {h.after_data?.id || h.entity}:{" "}
+                    {h.before_data?.status || "Chưa điểm danh"} →{" "}
+                    {h.after_data?.status || "Chưa điểm danh"} ·{" "}
+                    {h.after_data?.note || ""}
+                  </p>
+                ))
+              )}
+            </div>
+          )}
+          <hr />
+          <h3>Học sinh mới chưa có tên</h3>
+          <label>
+            Tên học sinh mới
+            <input
+              className="form-input"
+              value={pendingName}
+              onChange={(e) => setPendingName(e.target.value)}
+            />
+          </label>
+          <label>
+            SĐT / ghi chú
+            <input
+              className="form-input"
+              value={pendingNote}
+              onChange={(e) => setPendingNote(e.target.value)}
+            />
+          </label>
+          <button
+            className="btn"
+            disabled={sending || !pendingName.trim() || saving}
+            onClick={report}
+          >
+            {sending ? "Đang gửi…" : "Gửi báo cáo lên Văn phòng"}
+          </button>
+        </section>
+      )}
+      {office && caps?.operations && (
+        <>
+          <button
+            className="btn btn-secondary"
+            disabled={saving || dirty}
+            onClick={() => setOperations(!operations)}
+          >
+            Văn phòng: buổi học, học bù và chuyên cần
+          </button>
+          {operations && (
+            <AttendanceOperations
+              classes={classes}
+              classId={classId}
+              date={date}
+              onChange={reload}
+            />
+          )}
+        </>
       )}
     </div>
   );
-};
-
-export default Attendance;
+}

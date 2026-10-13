@@ -58,3 +58,49 @@ CREATE TABLE IF NOT EXISTS migration_archives (
  id text PRIMARY KEY, digest text UNIQUE NOT NULL, datasets jsonb NOT NULL,
  created_by text NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Attendance operations v2. Existing rows belong to the default daily session.
+ALTER TABLE attendance ADD COLUMN IF NOT EXISTS session_key text NOT NULL DEFAULT 'default';
+ALTER TABLE attendance DROP CONSTRAINT IF EXISTS attendance_pkey;
+ALTER TABLE attendance ADD PRIMARY KEY(student_id,class_id,attendance_date,session_key);
+ALTER TABLE attendance DROP CONSTRAINT IF EXISTS attendance_status_check;
+ALTER TABLE attendance ADD CONSTRAINT attendance_status_check CHECK(status IN ('Có mặt','Vắng','Đi trễ','Vắng có phép','Khác','Chưa điểm danh'));
+ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS starts_on date;
+ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS ends_on date;
+CREATE TABLE IF NOT EXISTS class_sessions (
+ class_id text NOT NULL REFERENCES classes(id), session_date date NOT NULL, session_key text NOT NULL,
+ label text NOT NULL, reason text NOT NULL DEFAULT '', created_by text NOT NULL,
+ PRIMARY KEY(class_id,session_date,session_key)
+);
+CREATE TABLE IF NOT EXISTS operation_requests (
+ id text PRIMARY KEY, payload jsonb NOT NULL, result jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS parent_tasks (
+ id text PRIMARY KEY, student_id text NOT NULL REFERENCES students(id), class_id text NOT NULL REFERENCES classes(id),
+ episode text NOT NULL, status text NOT NULL DEFAULT 'open', note text NOT NULL DEFAULT '',
+ created_at timestamptz NOT NULL DEFAULT now(), resolved_by text, resolved_at timestamptz,
+ UNIQUE(student_id,class_id,episode)
+);
+CREATE TABLE IF NOT EXISTS makeup_lessons (
+ id text PRIMARY KEY, student_id text NOT NULL REFERENCES students(id), source_class text NOT NULL REFERENCES classes(id),
+ source_date date NOT NULL, source_session text NOT NULL, target_class text NOT NULL REFERENCES classes(id),
+ target_date date NOT NULL, target_session text NOT NULL, note text NOT NULL DEFAULT '', created_by text NOT NULL,
+ UNIQUE(student_id,source_class,source_date,source_session)
+);
+CREATE TABLE IF NOT EXISTS families (id text PRIMARY KEY, name text NOT NULL);
+ALTER TABLE students ADD COLUMN IF NOT EXISTS family_id text REFERENCES families(id);
+CREATE TABLE IF NOT EXISTS student_results (
+ id text PRIMARY KEY, student_id text NOT NULL REFERENCES students(id), class_id text NOT NULL REFERENCES classes(id),
+ title text NOT NULL, test_date date NOT NULL, score numeric NOT NULL, maximum numeric NOT NULL CHECK(maximum>0),
+ created_by text NOT NULL, CHECK(score>=0 AND score<=maximum)
+);
+INSERT INTO schema_migrations(version) VALUES(2) ON CONFLICT DO NOTHING;
+ALTER TABLE families ADD COLUMN IF NOT EXISTS discount_percent numeric NOT NULL DEFAULT 0 CHECK(discount_percent>=0 AND discount_percent<=100);
+
+ALTER TABLE class_sessions ADD COLUMN IF NOT EXISTS starts_at time NOT NULL DEFAULT '00:00';
+CREATE TABLE IF NOT EXISTS enrollment_periods (
+ student_id text NOT NULL, class_id text NOT NULL, starts_on date NOT NULL, ends_on date,
+ PRIMARY KEY(student_id,class_id,starts_on), FOREIGN KEY(student_id,class_id) REFERENCES enrollments(student_id,class_id),
+ CHECK(ends_on IS NULL OR ends_on>starts_on)
+);
+CREATE INDEX IF NOT EXISTS attendance_audit_context_idx ON audit_log((after_data->>'classId'),(after_data->>'date'),(after_data->>'sessionKey')) WHERE action='attendance.save';

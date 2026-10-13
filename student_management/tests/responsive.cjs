@@ -16,19 +16,20 @@ const tuition = students.map((s,i)=>({id:`HD${1000+i}`,studentId:s.id,studentNam
  });
  const context=await browser.newContext();await serveBuild(context);
  await context.addInitScript(()=>{localStorage.setItem('edu_user','fixture');localStorage.setItem('edu_password','fixture');localStorage.setItem('edu_role','admin');});
- const writes=[], errors=[];
+ const writes=[], errors=[];let attendanceRows=students.map(s=>({...s,status:null,note:'',version:0,isTransferred:false}));
  await context.route('**/api/**',async route=>{
    const req=route.request(),p=new URL(req.url()).pathname;let data=[];
-   if(req.method()==='POST'){writes.push({path:p,data:req.postDataJSON()});data={success:true,tuition:{syncStatus:'Đã đồng bộ'}};}
+   if(req.method()==='POST'){writes.push({path:p,data:req.postDataJSON()});data={success:true,tuition:{syncStatus:'Đã đồng bộ'}};if(p==='/api/attendance'){const versions={};for(const r of req.postDataJSON().records){const row=attendanceRows.find(s=>s.id===r.id);Object.assign(row,r,{version:row.version+1});versions[r.id]=row.version;}data.versions=versions;}}
    else if(p==='/api/auth/me')data={role:'admin'};
    else if(p==='/api/students')data=students;
    else if(p==='/api/classes')data=classes;
    else if(p==='/api/tuition')data=tuition;
-   else if(p.includes('/attendance/class/'))data=students.map(s=>({...s,status:null,note:'',isTransferred:false}));
+   else if(p==='/api/attendance/capabilities')data={backend:'sheets',sessions:false,operations:false};
+   else if(p.includes('/attendance/class/'))data=attendanceRows;
    else if(p==='/api/pending-students')data=[{id:'P1',name:'Trần Bảo Ngọc',class:'9T1-K1',date:'2026-10-11',note:'Phụ huynh cần tư vấn',reportedBy:'trogiang',status:'Chờ duyệt'}];
    await route.fulfill({json:data,headers:{'Access-Control-Allow-Origin':'*'}});
  });
- const page=await context.newPage();page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.message));
+ const page=await context.newPage();page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
  for(const width of [320,390,640,768,1024,1440,1920]){
    await page.setViewportSize({width,height:900});
    for(const path of ['dashboard','students','classes','attendance','tuition']){
@@ -36,7 +37,7 @@ const tuition = students.map((s,i)=>({id:`HD${1000+i}`,studentId:s.id,studentNam
      if(['students','tuition'].includes(path))await page.locator('tbody tr').first().waitFor();
      if(path==='dashboard')await page.locator('.dashboard-intro').waitFor();
 
-     if(path==='attendance'){await page.getByRole('button',{name:'Tải danh sách',exact:true}).click();await page.locator('tbody tr').first().waitFor();}
+     if(path==='attendance'){await page.locator('tbody tr').first().waitFor();}
      const dim=await page.evaluate(()=>({view:innerWidth,scroll:document.documentElement.scrollWidth}));
      assert.ok(dim.scroll<=dim.view,`${width} ${path}: overflow ${JSON.stringify(dim)}`);
      if((width===390&&['students','attendance'].includes(path))||(width===1440&&path==='dashboard'))await page.screenshot({path:`/tmp/lt1-${path}-${width}.png`,fullPage:true});
@@ -52,7 +53,7 @@ const tuition = students.map((s,i)=>({id:`HD${1000+i}`,studentId:s.id,studentNam
  await page.getByLabel('Họ và Tên *',{exact:true}).focus();await page.waitForTimeout(250);await page.screenshot({path:'/tmp/lt1-modal-390.png'});await page.keyboard.press('Escape');assert.equal(await dialog.count(),0);
  await page.getByRole('button',{name:/Thêm học sinh/i}).click();await page.getByLabel('Họ và Tên *',{exact:true}).fill('Học sinh thử nghiệm');await page.getByRole('dialog').getByRole('button',{name:'Thêm Học Sinh',exact:true}).click();await page.locator('.toast-success').waitFor();assert.ok(writes.some(x=>x.path==='/api/students'));assert.equal(await page.getByRole('dialog').count(),0);
  await page.goto(`${base}/tuition`);await page.getByRole('button',{name:/Lập Hóa Đơn Mới/i}).last().click();await page.getByLabel('Lớp *',{exact:true}).selectOption('9T1-K1');await page.getByLabel('Mã Học Sinh *',{exact:true}).fill('HS1000');await page.getByLabel('Số tiền thu (VNĐ) *',{exact:true}).fill('500000');await page.getByRole('button',{name:/Lưu hóa đơn/i}).click();await page.locator('.toast-success').waitFor();const receipt=writes.find(x=>x.path==='/api/tuition');assert.equal(receipt.data.classId,'9T1-K1');assert.equal(receipt.data.amount,500000);assert.ok(receipt.data.period&&receipt.data.requestId);
- await page.goto(`${base}/attendance`);await page.getByRole('button',{name:'Tải danh sách',exact:true}).click();await page.getByRole('button',{name:'Đi trễ: Nguyễn Minh An 1',exact:true}).click();await page.getByRole('button',{name:/Lưu điểm danh/i}).click();await page.locator('.toast-success').waitFor();const attendance=writes.find(x=>x.path==='/api/attendance');assert.equal(attendance.data.records[0].status,'Khác');assert.equal(attendance.data.records[0].note,'Đi trễ');assert.equal(attendance.data.records[0].id,'HS1000');
+ await page.goto(`${base}/attendance`);await page.getByRole('combobox',{name:'Trạng thái Nguyễn Minh An 1',exact:true}).selectOption('Đi trễ');await page.getByRole('button',{name:/Lưu điểm danh/i}).click();await page.locator('.toast-success').waitFor();const attendance=writes.find(x=>x.path==='/api/attendance');assert.equal(attendance.data.records[0].status,'Đi trễ');assert.equal(attendance.data.records[0].note,'');assert.equal(attendance.data.records[0].id,'HS1000');
  await page.goto(`${base}/classes`);await page.getByRole('button',{name:'Chi tiết & Danh sách HS'}).click();await page.getByRole('dialog').locator('tbody tr').first().waitFor();await page.waitForTimeout(250);assert.ok(await page.getByRole('dialog').evaluate(el=>el.scrollWidth<=el.clientWidth));await page.keyboard.press('Escape');
  assert.deepEqual(errors,[]);
  const loginContext=await browser.newContext();await serveBuild(loginContext);await loginContext.route('**/api/auth/me',r=>r.fulfill({status:401,json:{error:'Unauthorized'},headers:{'Access-Control-Allow-Origin':'*'}}));const login=await loginContext.newPage();await login.setViewportSize({width:390,height:844});await login.goto(base);await login.getByLabel('Tài khoản',{exact:true}).fill('wrong');await login.getByLabel('Mật khẩu',{exact:true}).fill('wrong');await login.getByRole('button',{name:'Hiện mật khẩu'}).click();assert.equal(await login.getByLabel('Mật khẩu',{exact:true}).getAttribute('type'),'text');await login.getByRole('button',{name:'Đăng nhập',exact:true}).click();await login.getByRole('alert').waitFor();assert.match(await login.getByRole('alert').textContent(),/chưa đúng/);await login.screenshot({path:'/tmp/lt1-login-390.png',fullPage:true});

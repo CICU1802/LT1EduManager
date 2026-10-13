@@ -13,16 +13,20 @@ export function isDateMatch(cell, date) {
   return !!match && +match[1] === d && +match[2] === m &&
     (!match[3] || +match[3] === y || (match[3].length === 2 && +match[3] === y % 100));
 }
-export function resolveAttendanceRecords(rows, header, nameCol, records) {
+export function resolveAttendanceRecords(rows, layout, legacyNameCol, legacyRecords) {
+  const modern = typeof layout === 'object';
+  const records = modern ? legacyNameCol : legacyRecords;
+  const dataStart = modern ? layout.dataStart : layout + 2;
+  const idCol = modern ? layout.idCol : legacyNameCol + 1;
   if (!Array.isArray(records) || !records.length) throw invalid('Chưa có bản ghi điểm danh.');
   const seen = new Set();
   return records.map(record => {
     const id = String(record.id || '').trim();
     if (!id || seen.has(id)) throw invalid('Mã học sinh bị thiếu hoặc trùng.');
     seen.add(id);
-    if (!['Có mặt', 'Vắng', 'Khác'].includes(record.status)) throw invalid('Trạng thái điểm danh không hợp lệ.');
-    const matches = rows.flatMap((row, i) => i > header + 1 && row[nameCol] &&
-      String(row[nameCol + 1] || '').trim() === id ? [i + 1] : []);
+    if (![null, 'Có mặt', 'Học online', 'Đi trễ', 'Học bù', 'Vắng', 'Vắng có phép', 'Nghỉ lễ'].includes(record.status)) throw invalid('Trạng thái điểm danh không hợp lệ.');
+    const matches = rows.flatMap((row, i) => i >= dataStart &&
+      String(row[idCol] || '').trim() === id ? [i + 1] : []);
     if (matches.length !== 1) throw invalid(`Mã ${id} không tồn tại hoặc bị trùng trong lớp. Vui lòng tải lại danh sách.`, 409);
     return { ...record, rowIndex: matches[0] };
   });

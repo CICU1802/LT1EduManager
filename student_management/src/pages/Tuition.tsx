@@ -388,6 +388,7 @@ const Tuition = () => {
 
             <form onSubmit={handleAddTuition}>
               <p>Mỗi hóa đơn ghi nhận tiền cho một lớp và một kỳ học.</p>
+              <button type="button" className="btn btn-secondary" disabled={!newTuition.studentId||!newTuition.classId} onClick={async()=>{try{const r=await api.get('/api/tuition-quote',{params:{studentId:newTuition.studentId,classId:newTuition.classId}});setNewTuition({...newTuition,amount:r.data.amount});notify(`Mức lớp ${r.data.base.toLocaleString('vi-VN')}đ · Giảm gia đình ${r.data.discountPercent}%`,'success');}catch(err){setError(err.response?.data?.error||'Tính học phí gia đình cần PostgreSQL và mức học phí lớp.');}}}>Áp dụng mức lớp và giảm gia đình</button>
               <div className="form-group">
                 <label className="form-label" htmlFor="tuition-field-1">Lớp *</label>
                 <select id="tuition-field-1" required className="form-input" value={newTuition.classId} onChange={e => setNewTuition({...newTuition, classId: e.target.value})}>
@@ -401,7 +402,7 @@ const Tuition = () => {
               </div>
               <div className="form-group">
                 <label className="form-label" htmlFor="tuition-field-3">Mã Học Sinh *</label>
-                <input id="tuition-field-3" required type="text" className="form-input" placeholder="VD: HS2620001" value={newTuition.studentId} onChange={(e) => setNewTuition({...newTuition, studentId: e.target.value})} />
+                <input id="tuition-field-3" required type="text" className="form-input" placeholder="VD: 2012-000001" value={newTuition.studentId} onChange={(e) => setNewTuition({...newTuition, studentId: e.target.value})} />
               </div>
 
               <div className="form-row">
