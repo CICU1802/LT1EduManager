@@ -1,13 +1,38 @@
 import { createHash, randomUUID } from "node:crypto";
 import { invalid, isDateMatch, resolveAttendanceRecords } from "./integrity.js";
 import { scheduledDays } from "./db/attendance-operations.js";
+import {
+  findDateColumn,
+  locateClassSheet,
+  quote,
+  readValues,
+} from "./normalized-sheets.js";
 const hash = (v) =>
   createHash("sha256").update(JSON.stringify(v)).digest("hex");
 const today = () =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh" }).format(
     new Date(),
   );
-const quote = (s) => `'${s.replaceAll("'", "''")}'`;
+const STATUS_FROM_SHEET = {
+  CM: "Có mặt",
+  ON: "Học online",
+  TR: "Đi trễ",
+  BU: "Học bù",
+  P: "Vắng có phép",
+  K: "Vắng",
+  LE: "Nghỉ lễ",
+  TRUE: "Có mặt",
+  FALSE: "Vắng",
+};
+const STATUS_TO_SHEET = {
+  "Có mặt": "CM",
+  "Học online": "ON",
+  "Đi trễ": "TR",
+  "Học bù": "BU",
+  Vắng: "K",
+  "Vắng có phép": "P",
+  "Nghỉ lễ": "LE",
+};
 export function createSheetsAttendance(getSheets, env) {
   let queue = Promise.resolve();
   const serial = (fn) => {
@@ -18,45 +43,36 @@ export function createSheetsAttendance(getSheets, env) {
   async function context(classId, date) {
     isDateMatch(date, date);
     const sheets = await getSheets();
-    const catalogue =
-      (
-        await sheets.spreadsheets.values.get({
-          spreadsheetId: env.SPREADSHEET_ID,
-          range: "DB_LopHoc!A2:F",
-        })
-      ).data.values || [];
-    const cls = catalogue.find((r) => r[0] === classId);
-    if (!cls) throw invalid("Lớp không tồn tại.");
-    const days = scheduledDays({ schedule: cls[5] });
-    if (cls[5] && !days.length)
+    const located = await locateClassSheet(
+      sheets,
+      env,
+      "attendance",
+      classId,
+    );
+    const { spreadsheetId, meta, sheet, title, rows, schema } = located;
+    let schedule = schema.metadata.schedule;
+    if (!schedule && !schema.normalized && env.SPREADSHEET_ID) {
+      try {
+        const catalogue = await readValues(
+          sheets,
+          env.SPREADSHEET_ID,
+          "DB_LopHoc!A2:F",
+        );
+        schedule = String(
+          catalogue.find((row) => row[0] === classId)?.[5] || "",
+        );
+      } catch {
+        // A standardized deployment intentionally has no DB_LopHoc tab.
+      }
+    }
+    const days = scheduledDays({ schedule });
+    if (schedule && !days.length)
       throw invalid("Lịch lớp chưa nhận diện được. Cần chuẩn hóa lịch.");
     if (
       days.length &&
       !days.includes(new Date(date + "T12:00:00Z").getUTCDay())
     )
       throw invalid("Ngày ngoài lịch học của lớp.");
-    const mapping = JSON.parse(env.ATTENDANCE_SHEET_MAP_JSON || "{}")[classId];
-    const spreadsheetId =
-      mapping?.spreadsheetId ||
-      (/10|11|12|ĐGNL/.test(classId.toUpperCase())
-        ? env.SPREADSHEET_ID_ATTENDANCE_C3
-        : env.SPREADSHEET_ID_ATTENDANCE_C2) ||
-      env.SPREADSHEET_ID_ATTENDANCE ||
-      env.SPREADSHEET_ID;
-    const meta = (await sheets.spreadsheets.get({ spreadsheetId })).data;
-    const sheet = meta.sheets.find(
-      (s) => s.properties.title.trim() === (mapping?.title || classId).trim(),
-    );
-    if (!sheet) throw invalid("Không tìm thấy sheet lớp.", 404);
-    const title = sheet.properties.title;
-    const rows =
-      (
-        await sheets.spreadsheets.values.get({
-          spreadsheetId,
-          range: quote(title),
-          valueRenderOption: "FORMATTED_VALUE",
-        })
-      ).data.values || [];
     const grid =
       (
         await sheets.spreadsheets.get({
@@ -65,41 +81,13 @@ export function createSheetsAttendance(getSheets, env) {
           includeGridData: true,
         })
       ).data.sheets?.[0]?.data?.[0]?.rowData || [];
-    const header = rows.findIndex(
-      (r, i) => i < 10 && r.some((v) => /HỌ VÀ TÊN|TÊN HS/i.test(String(v))),
-    );
-    if (header < 0) throw invalid("Không tìm thấy cấu trúc điểm danh.");
-    const nameCol = rows[header].findIndex((v) =>
-      /HỌ VÀ TÊN|TÊN HS/i.test(String(v)),
-    );
-    let dateCol = (rows[header + 1] || []).findIndex(
-      (v, i) => i > nameCol && isDateMatch(v, date),
-    );
-    const master =
-      (
-        await sheets.spreadsheets.values.get({
-          spreadsheetId: env.SPREADSHEET_ID,
-          range: "DB_HocSinh!A2:M",
-        })
-      ).data.values || [];
-    const transferred = new Set(
-      master
-        .filter((r) =>
-          String(r[7] || "")
-            .split(",")
-            .some((v) =>
-              new RegExp(
-                "^" +
-                  classId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") +
-                  "\\s*\\((?:CHUYỂN|ĐÃ CHUYỂN|NGHỈ)\\)$",
-                "i",
-              ).test(v.trim()),
-            ),
-        )
-        .map((r) => String(r[0]).trim()),
-    );
+    let dateCol = findDateColumn(rows, schema, date);
     const students = rows.flatMap((r, i) => {
-      if (i <= header + 1 || !String(r[nameCol] || "").trim()) return [];
+      if (i < schema.dataStart || !String(r[schema.nameCol] || "").trim())
+        return [];
+      const realId = String(r[schema.idCol] || "").trim();
+      const unmatched = !realId;
+      const id = realId || `CHUA-DOI-CHIEU-${i + 1}`;
       const value = dateCol < 0 ? "" : String(r[dateCol] ?? "");
       const cellNote =
         dateCol < 0 ? "" : grid[i]?.values?.[dateCol]?.note || "";
@@ -111,9 +99,11 @@ export function createSheetsAttendance(getSheets, env) {
         /* Legacy plain note. */
       }
       let status = null,
-        note = detail?.note || "";
-      if (value.toUpperCase() === "TRUE") status = "Có mặt";
-      else if (value.toUpperCase() === "FALSE") status = "Vắng";
+        note =
+          detail?.note ||
+          String(schema.noteCol >= 0 ? r[schema.noteCol] || "" : "").trim();
+      const code = value.trim().toUpperCase();
+      if (STATUS_FROM_SHEET[code]) status = STATUS_FROM_SHEET[code];
       else if (value.startsWith("Đi trễ")) {
         status = "Đi trễ";
         if (!detail) note = value.replace(/^Đi trễ(?:: )?/, "");
@@ -126,12 +116,17 @@ export function createSheetsAttendance(getSheets, env) {
       }
       return [
         {
-          id: String(r[nameCol + 1] || "").trim(),
-          name: String(r[nameCol]).trim(),
+          id,
+          name: String(r[schema.nameCol]).trim(),
           status,
           note,
-          version: hash([value, cellNote]),
-          isTransferred: transferred.has(String(r[nameCol + 1] || "").trim()),
+          version: hash([
+            value,
+            cellNote,
+            schema.noteCol >= 0 ? r[schema.noteCol] || "" : "",
+          ]),
+          isTransferred: unmatched,
+          unmatched,
           rowIndex: i + 1,
         },
       ];
@@ -143,8 +138,7 @@ export function createSheetsAttendance(getSheets, env) {
       sheet,
       title,
       rows,
-      header,
-      nameCol,
+      schema,
       dateCol,
       students,
       grid,
@@ -168,16 +162,11 @@ export function createSheetsAttendance(getSheets, env) {
           throw invalid("Nhiều ca cần chế độ PostgreSQL.");
         if (body.date > today()) throw invalid("Không lưu ngày tương lai.");
         const ctx = await context(body.classId, body.date);
-        const { sheets, spreadsheetId, sheet, rows, header, nameCol } = ctx;
-        const mapped = (body.records || []).map((r) => ({
-          ...r,
-          status: ["Có mặt", "Vắng"].includes(r.status) ? r.status : "Khác",
-        }));
+        const { sheets, spreadsheetId, sheet, rows, schema } = ctx;
         const resolved = resolveAttendanceRecords(
           rows,
-          header,
-          nameCol,
-          mapped,
+          { dataStart: schema.dataStart, idCol: schema.idCol },
+          body.records,
         );
         const requestId = body.requestId;
         if (
@@ -221,7 +210,9 @@ export function createSheetsAttendance(getSheets, env) {
               "Vắng",
               "Đi trễ",
               "Vắng có phép",
-              "Khác",
+              "Học online",
+              "Học bù",
+              "Nghỉ lễ",
             ].includes(r.status)
           )
             throw invalid("Trạng thái không hợp lệ.");
@@ -242,7 +233,17 @@ export function createSheetsAttendance(getSheets, env) {
         let col = ctx.dateCol;
         const requests = [];
         if (col < 0) {
-          col = Math.max((rows[header + 1] || []).length, nameCol + 2);
+          col = -1;
+          for (let candidate = schema.firstDateCol; candidate <= schema.lastDateCol; candidate += 1) {
+            if (!String(rows[schema.dateHeader]?.[candidate] || "").trim()) {
+              col = candidate;
+              break;
+            }
+          }
+          if (col < 0)
+            throw invalid(
+              "Lớp đã đủ 12 cột điểm danh. Hãy chọn một ngày có trong dòng 8.",
+            );
           if (col >= sheet.properties.gridProperties.columnCount)
             requests.push({
               appendDimension: {
@@ -255,7 +256,7 @@ export function createSheetsAttendance(getSheets, env) {
             updateCells: {
               start: {
                 sheetId: sheet.properties.sheetId,
-                rowIndex: header + 1,
+                rowIndex: schema.dateHeader,
                 columnIndex: col,
               },
               rows: [
@@ -282,25 +283,13 @@ export function createSheetsAttendance(getSheets, env) {
             legacy,
             revision: randomUUID(),
           });
-          const value =
-            r.status === "Có mặt"
-              ? { boolValue: true }
-              : r.status === "Vắng"
-                ? { boolValue: false }
-                : {
-                    stringValue: r.status
-                      ? r.status === "Khác"
-                        ? r.note || "Khác"
-                        : r.status
-                      : "",
-                  };
-          const formatted =
-            value.boolValue === true
-              ? "TRUE"
-              : value.boolValue === false
-                ? "FALSE"
-                : value.stringValue;
-          versions[r.id] = hash([formatted, note]);
+          const formatted = r.status ? STATUS_TO_SHEET[r.status] : "";
+          const value = { stringValue: formatted };
+          versions[r.id] = hash([
+            formatted,
+            note,
+            schema.noteCol >= 0 ? rows[row]?.[schema.noteCol] || "" : "",
+          ]);
           changes.push({
             id: r.id,
             before: { status: old.status, note: old.note },

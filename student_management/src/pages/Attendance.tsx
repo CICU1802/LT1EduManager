@@ -4,7 +4,15 @@ import { vietnamDate } from "../utils/date";
 import { notify } from "../utils/notify";
 import { AttendanceOperations } from "./AttendanceOperations";
 
-const labels = ["Có mặt", "Đi trễ", "Vắng", "Vắng có phép"];
+const labels = [
+  "Có mặt",
+  "Học online",
+  "Đi trễ",
+  "Học bù",
+  "Vắng có phép",
+  "Vắng",
+  "Nghỉ lễ",
+];
 const normalize = (s) =>
   s
     .normalize("NFD")
@@ -503,7 +511,7 @@ export default function Attendance() {
               </span>
             ))}
             <span className="badge">
-              Đã đến lớp: {count("Có mặt") + count("Đi trễ")}
+              Sĩ số: {count("Có mặt") + count("Học online") + count("Đi trễ") + count("Học bù")}
             </span>
             <span className="badge">
               Chưa điểm danh: {active.filter((s) => !s.status).length}
@@ -574,7 +582,10 @@ export default function Attendance() {
                         }
                       >
                         <option value="">Chưa điểm danh</option>
-                        {[...labels, "Khác"].map((v) => (
+                        {s.status === "Khác" && (
+                          <option value="Khác" disabled>Dữ liệu cũ cần quy đổi</option>
+                        )}
+                        {labels.map((v) => (
                           <option key={v}>{v}</option>
                         ))}
                       </select>

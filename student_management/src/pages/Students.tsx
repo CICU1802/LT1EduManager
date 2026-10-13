@@ -32,7 +32,7 @@ const Students = () => {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [newStudent, setNewStudent] = useState({
     name: '', phone: '', parentName: '', parentPhone: '', dob: '', school: '', classes: '',
-    address: '', dateJoined: vietnamDate(), status: 'Đang học', notes: ''
+    address: '', dateJoined: vietnamDate(), status: 'Đang học', notes: '', level: 2
   });
   const [saving, setSaving] = useState(false);
 
@@ -135,7 +135,7 @@ const Students = () => {
         setShowModal(false);
         setNewStudent({
           name: '', phone: '', parentName: '', parentPhone: '', dob: '', school: '', classes: '',
-          address: '', dateJoined: vietnamDate(), status: 'Đang học', notes: ''
+          address: '', dateJoined: vietnamDate(), status: 'Đang học', notes: '', level: 2
         });
         notify('Đã thêm học sinh thành công.', 'success');
         fetchStudentsAndClasses();
@@ -387,8 +387,8 @@ const Students = () => {
                   <input id="students-field-2" type="text" className="form-input" value={newStudent.phone} onChange={(e) => setNewStudent({...newStudent, phone: e.target.value})} />
                 </div>
                 <div className="form-group" style={{ flex: 1 }}>
-                  <label className="form-label" htmlFor="students-field-3">Ngày sinh</label>
-                  <input id="students-field-3" type="date" className="form-input" value={newStudent.dob} onChange={(e) => setNewStudent({...newStudent, dob: e.target.value})} />
+                  <label className="form-label" htmlFor="students-field-3">Ngày sinh *</label>
+                  <input id="students-field-3" required type="date" className="form-input" value={newStudent.dob} onChange={(e) => setNewStudent({...newStudent, dob: e.target.value})} />
                 </div>
               </div>
               <div className="form-row">
@@ -405,6 +405,19 @@ const Students = () => {
                 <div className="form-group" style={{ flex: 1 }}>
                   <label className="form-label" htmlFor="students-field-6">Trường học</label>
                   <input id="students-field-6" type="text" className="form-input" value={newStudent.school} onChange={(e) => setNewStudent({...newStudent, school: e.target.value})} />
+                </div>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="form-label" htmlFor="students-field-level">Cấp học *</label>
+                  <select id="students-field-level" className="form-input" value={newStudent.level} onChange={(e) => setNewStudent({...newStudent, level: Number(e.target.value)})}>
+                    <option value={2}>Cấp 2</option>
+                    <option value={3}>Cấp 3</option>
+                  </select>
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="form-label" htmlFor="students-field-address">Địa chỉ</label>
+                  <input id="students-field-address" type="text" className="form-input" value={newStudent.address} onChange={(e) => setNewStudent({...newStudent, address: e.target.value})} />
                 </div>
                 <div className="form-group" style={{ flex: 1 }}>
                   <label className="form-label" htmlFor="students-field-7">Mã lớp đăng ký</label><datalist id="student-enrollment-codes">{Object.values(groupedClasses).flat().map(c => <option key={c.id} value={c.id}/>)}</datalist>

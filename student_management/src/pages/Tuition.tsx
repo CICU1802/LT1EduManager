@@ -402,7 +402,7 @@ const Tuition = () => {
               </div>
               <div className="form-group">
                 <label className="form-label" htmlFor="tuition-field-3">Mã Học Sinh *</label>
-                <input id="tuition-field-3" required type="text" className="form-input" placeholder="VD: HS2620001" value={newTuition.studentId} onChange={(e) => setNewTuition({...newTuition, studentId: e.target.value})} />
+                <input id="tuition-field-3" required type="text" className="form-input" placeholder="VD: 2012-000001" value={newTuition.studentId} onChange={(e) => setNewTuition({...newTuition, studentId: e.target.value})} />
               </div>
 
               <div className="form-row">

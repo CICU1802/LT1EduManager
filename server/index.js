@@ -3,9 +3,13 @@ import { createDatabase } from "./db/database.js";
 import { createDataService } from "./db/service.js";
 import { createDataRouter } from "./db/router.js";
 import { createExcelRouter } from "./excel/router.js";
+import {
+  loadClassCatalog,
+  loadStudents,
+  studentSpreadsheetId,
+} from "./normalized-sheets.js";
 import { timingSafeEqual, createHash } from "node:crypto";
 import express from "express";
-import { randomUUID } from "node:crypto";
 import { createTuitionService } from "./tuition.js";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -218,12 +222,69 @@ async function getSheetsAPI() {
   return google.sheets({ version: "v4", auth: client });
 }
 
+let classCatalogCache = null;
+async function getClassCatalog(sheets) {
+  if (classCatalogCache && Date.now() - classCatalogCache.loadedAt < 30_000)
+    return classCatalogCache.value;
+  const value = await loadClassCatalog(sheets, process.env);
+  classCatalogCache = { loadedAt: Date.now(), value };
+  return value;
+}
+
+const masterSpreadsheetId = () => studentSpreadsheetId(process.env);
+
+async function readOptionalInternalSheet(sheets, range) {
+  try {
+    return (
+      await sheets.spreadsheets.values.get({
+        spreadsheetId: masterSpreadsheetId(),
+        range,
+      })
+    ).data.values || [];
+  } catch (error) {
+    if ([400, 404].includes(error?.code) || [400, 404].includes(error?.status))
+      return null;
+    throw error;
+  }
+}
+
+async function ensurePendingSheet(sheets) {
+  const existing = await readOptionalInternalSheet(sheets, "DB_ChoDuyet!A1:I");
+  if (existing !== null) return;
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: masterSpreadsheetId(),
+    requestBody: {
+      requests: [
+        { addSheet: { properties: { title: "DB_ChoDuyet", hidden: true } } },
+      ],
+    },
+  });
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: masterSpreadsheetId(),
+    range: "DB_ChoDuyet!A1:I1",
+    valueInputOption: "RAW",
+    requestBody: {
+      values: [[
+        "id",
+        "ngay",
+        "lop",
+        "ho_ten",
+        "ghi_chu",
+        "nguoi_bao",
+        "trang_thai",
+        "nguoi_xu_ly",
+        "xu_ly_luc",
+      ]],
+    },
+  });
+}
+
 // Test Endpoint
 app.get("/api/health", (req, res) => {
   res.json({
     status: "Server is running",
     integrityVersion: 1,
-    sheetsConfigured: !!process.env.SPREADSHEET_ID,
+    sheetsConfigured: !!masterSpreadsheetId(),
     dataBackend: DATABASE_ACTIVE ? "postgres" : "sheets",
     databaseConfigured: !!database,
   });
@@ -233,27 +294,31 @@ app.get("/api/health", (req, res) => {
 app.get("/api/students", async (req, res) => {
   try {
     const sheets = await getSheetsAPI();
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.SPREADSHEET_ID,
-      range: "DB_HocSinh!A2:M",
-    });
-    const rows = response.data.values || [];
-
-    // Map rows to objects
-    const students = rows.map((row) => ({
-      id: row[0] || "",
-      name: row[1] || "",
-      phone: row[2] || "",
-      parentPhone: row[3] || "",
-      parentName: row[4] || "",
-      dob: row[5] || "",
-      school: row[6] || "",
-      classes: row[7] || "",
-      dateJoined: row[8] || "",
-      status: row[9] || "",
-      debtStatus: row[10] || "Hoàn tất",
-      absences: row[11] || 0,
-      notes: row[12] || "",
+    const [source, catalog] = await Promise.all([
+      loadStudents(sheets, process.env),
+      getClassCatalog(sheets),
+    ]);
+    const students = source.map((student) => ({
+      id: student.id,
+      name: student.name,
+      phone: student.phone,
+      parentPhone: student.secondPhone,
+      parentName: "",
+      dob: student.birthYear,
+      school: student.school,
+      address: student.address,
+      classes:
+        student.classes ||
+        catalog.classes
+          .filter((item) => catalog.memberships.get(item.id)?.has(student.id))
+          .map((item) => item.id)
+          .join(", "),
+      dateJoined: "",
+      status: "Đang học",
+      debtStatus: "Hoàn tất",
+      absences: 0,
+      notes: student.notes,
+      level: student.level,
     }));
 
     res.json(students);
@@ -275,37 +340,41 @@ app.post("/api/students", async (req, res) => {
       classes,
       dateJoined,
       status,
-      debtStatus,
-      absences,
       notes,
+      address,
+      level,
     } = req.body;
     const sheets = await getSheetsAPI();
-
-    // Create new ID
-    const newId = `HS-${randomUUID()}`;
+    const existing = await loadStudents(sheets, process.env);
+    const year = Number(String(dob || "").match(/^(\d{4})/)?.[1]);
+    if (!name?.trim() || !Number.isInteger(year) || year < 2000 || year > 2030)
+      return res.status(422).json({ error: "Cần họ tên và năm sinh từ 2000 đến 2030." });
+    if (phone && !/^0\d{9}$/.test(String(phone).trim()))
+      return res.status(422).json({ error: "SĐT 1 phải gồm 10 chữ số và bắt đầu bằng 0." });
+    if (parentPhone && !/^0\d{9}$/.test(String(parentPhone).trim()))
+      return res.status(422).json({ error: "SĐT 2 phải gồm 10 chữ số và bắt đầu bằng 0." });
+    const next =
+      Math.max(
+        0,
+        ...existing.map((student) => Number(student.id.match(/-(\d{6})$/)?.[1] || 0)),
+      ) + 1;
+    if (next > 999999) return res.status(409).json({ error: "Đã hết dải mã học sinh." });
+    const newId = `${year}-${String(next).padStart(6, "0")}`;
+    const chosenLevel = Number(level) === 3 ? 3 : Number(level) === 2 ? 2 : year <= 2011 ? 3 : 2;
+    const extraNotes = [
+      notes,
+      parentName ? `Phụ huynh: ${parentName}` : "",
+      classes ? `Lớp đăng ký: ${classes}` : "",
+      dateJoined ? `Ngày vào: ${dateJoined}` : "",
+      status && status !== "Đang học" ? `Trạng thái: ${status}` : "",
+    ].filter(Boolean).join("; ");
 
     await sheets.spreadsheets.values.append({
-      spreadsheetId: process.env.SPREADSHEET_ID,
-      range: "DB_HocSinh!A:M",
-      valueInputOption: "USER_ENTERED",
+      spreadsheetId: masterSpreadsheetId(),
+      range: `HOC_SINH_CAP${chosenLevel}!A:H`,
+      valueInputOption: "RAW",
       requestBody: {
-        values: [
-          [
-            newId,
-            name || "",
-            phone || "",
-            parentPhone || "",
-            parentName || "",
-            dob || "",
-            school || "",
-            classes || "",
-            dateJoined || "",
-            status || "",
-            debtStatus || "Hoàn tất",
-            absences || 0,
-            notes || "",
-          ],
-        ],
+        values: [[newId, year, name.trim(), school || "", phone || "", parentPhone || "", address || "", extraNotes]],
       },
     });
 
@@ -317,14 +386,16 @@ app.post("/api/students", async (req, res) => {
         phone,
         parentPhone,
         parentName,
-        dob,
+        dob: String(year),
         school,
         classes,
         dateJoined,
         status,
-        debtStatus,
-        absences,
-        notes,
+        debtStatus: "Hoàn tất",
+        absences: 0,
+        notes: extraNotes,
+        address,
+        level: chosenLevel,
       },
     });
   } catch (error) {
@@ -336,19 +407,7 @@ app.post("/api/students", async (req, res) => {
 app.get("/api/classes", async (req, res) => {
   try {
     const sheets = await getSheetsAPI();
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.SPREADSHEET_ID,
-      range: "DB_LopHoc!A2:F",
-    });
-    const rows = response.data.values || [];
-    const classes = rows.map((row) => ({
-      id: row[0],
-      name: row[1],
-      grade: row[2],
-      teacher: row[3],
-      tuition: row[4],
-      schedule: row[5],
-    }));
+    const { classes } = await getClassCatalog(sheets);
     res.json(classes);
   } catch (error) {
     res.status(error.status || 500).json({ error: error.message });
@@ -381,34 +440,17 @@ app.post("/api/tuition/:id/retry", async (req, res) => {
 
 // Add Class (Thêm Lớp Học)
 app.post("/api/classes", async (req, res) => {
-  try {
-    const { id, name, grade, teacher, tuition, schedule } = req.body;
-    const sheets = await getSheetsAPI();
-
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: process.env.SPREADSHEET_ID,
-      range: "DB_LopHoc!A:F",
-      valueInputOption: "USER_ENTERED",
-      requestBody: {
-        values: [[id, name, grade, teacher, tuition, schedule]],
-      },
-    });
-
-    res.json({ success: true });
-  } catch (error) {
-    res.status(error.status || 500).json({ error: error.message });
-  }
+  res.status(422).json({
+    error:
+      "Hãy tạo cặp sheet điểm danh và học phí từ mẫu, đặt tên {mã_lớp}_{mã_khóa}; web sẽ tự nhận lớp mới.",
+  });
 });
 
 // Get Pending Students (Học sinh chờ duyệt)
 app.get("/api/pending-students", async (req, res) => {
   try {
     const sheets = await getSheetsAPI();
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.SPREADSHEET_ID,
-      range: "DB_ChoDuyet!A2:I",
-    });
-    const rows = response.data.values || [];
+    const rows = (await readOptionalInternalSheet(sheets, "DB_ChoDuyet!A2:I")) || [];
     const pending = rows.map((row) => ({
       id: row[0] || "",
       date: row[1] || "",
@@ -441,13 +483,8 @@ app.post("/api/pending-students", async (req, res) => {
     const reporter = req.user?.username || "unknown";
 
     const sheets = await getSheetsAPI();
-    const existing =
-      (
-        await sheets.spreadsheets.values.get({
-          spreadsheetId: process.env.SPREADSHEET_ID,
-          range: "DB_ChoDuyet!A2:I",
-        })
-      ).data.values || [];
+    await ensurePendingSheet(sheets);
+    const existing = (await readOptionalInternalSheet(sheets, "DB_ChoDuyet!A2:I")) || [];
     const duplicate = existing.find(
       (r) =>
         r[0] === newId ||
@@ -460,7 +497,7 @@ app.post("/api/pending-students", async (req, res) => {
     if (duplicate)
       return res.json({ success: true, id: duplicate[0], duplicate: true });
     await sheets.spreadsheets.values.append({
-      spreadsheetId: process.env.SPREADSHEET_ID,
+      spreadsheetId: masterSpreadsheetId(),
       range: "DB_ChoDuyet!A:G",
       valueInputOption: "USER_ENTERED",
       requestBody: {
@@ -480,11 +517,7 @@ app.post("/api/pending-students/:id/resolve", async (req, res) => {
   const { id } = req.params;
   try {
     const sheets = await getSheetsAPI();
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.SPREADSHEET_ID,
-      range: "DB_ChoDuyet!A2:I",
-    });
-    const rows = response.data.values || [];
+    const rows = (await readOptionalInternalSheet(sheets, "DB_ChoDuyet!A2:I")) || [];
     let rowIndex = -1;
     for (let i = 0; i < rows.length; i++) {
       if (rows[i][0] === id) {
@@ -498,7 +531,7 @@ app.post("/api/pending-students/:id/resolve", async (req, res) => {
     if (rows[rowIndex - 2][6] === "Đã xử lý")
       return res.json({ success: true });
     await sheets.spreadsheets.values.update({
-      spreadsheetId: process.env.SPREADSHEET_ID,
+      spreadsheetId: masterSpreadsheetId(),
       range: `DB_ChoDuyet!G${rowIndex}:I${rowIndex}`,
       valueInputOption: "RAW",
       requestBody: {

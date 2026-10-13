@@ -127,7 +127,7 @@ try {
       document.querySelector('[aria-label="Trạng thái Học sinh 15"]'),
       "Đi trễ",
     );
-    assert.ok(document.body.textContent.includes("Đã đến lớp: 2"));
+    assert.ok(document.body.textContent.includes("Sĩ số: 2"));
     await click(button("Lưu điểm danh"));
     assert.equal(posts[0].payload.records.length, 2);
     assert.equal(posts[0].payload.records[0].note, "Ghi chú cần giữ");

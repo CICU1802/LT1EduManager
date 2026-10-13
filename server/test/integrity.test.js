@@ -11,10 +11,11 @@ function fixture() {
       get: async ({ range }) => {
         let rows;
         if (range.startsWith('DB_HocPhi')) rows = state.invoices;
+        else if (range.startsWith('HOC_SINH_CAP')) throw Object.assign(new Error('missing'), { code: 400 });
         else if (range.startsWith('DB_HocSinh')) rows = [['HS1', 'An']];
         else if (range.startsWith('DB_LopHoc')) rows = [['L10'], ['L11']];
         else if (range.startsWith('DB_DangKyLop')) rows = state.enrolled;
-        else rows = [['MÃ HS', 'THỰC ĐÓNG', 'NGÀY ĐÓNG'], ['HS1', state.amount, state.date]];
+        else rows = [['MÃ HS', 'THỰC ĐÓNG', 'NGÀY ĐÓNG'], ...(state.enrolled.some(r => r[0] === 'HS1' && range.includes(r[1])) ? [['HS1', state.amount, state.date]] : [])];
         return { data: { values: structuredClone(rows) } };
       },
       append: async ({ requestBody }) => { state.invoices.push(...structuredClone(requestBody.values)); return { data: {} }; },
@@ -119,11 +120,11 @@ test('Rejects invalid amounts, dates and unregistered classes before appending',
   await assert.rejects(service.create(body({ amount: -1 }), 'admin'));
   await assert.rejects(service.create(body({ date: '2026-02-30' }), 'admin'));
   state.enrolled = [];
-  await assert.rejects(service.create(body(), 'admin'), /chưa đăng ký/);
+  await assert.rejects(service.create(body(), 'admin'), /thiếu hoặc trùng/);
   assert.equal(state.invoices.length, 0);
 });
 test('Vietnam calendar defaults are correct around midnight regardless of system timezone', async () => {
-  const { vietnamDate } = await import('../../student_management/src/utils/date.ts');
+  const { vietnamDate } = await import('../../student_management/src/utils/date.js');
   assert.equal(vietnamDate(new Date('2026-10-11T17:01:00Z')), '2026-10-12');
   assert.equal(vietnamDate(new Date('2026-10-11T16:59:00Z')), '2026-10-11');
 });

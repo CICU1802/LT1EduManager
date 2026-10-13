@@ -10,18 +10,30 @@ React/Vite frontend (`student_management`) and Express + Google Sheets backend (
 - A persisted request ID prevents duplicate invoice submission; the browser keeps the draft in session storage across reloads. Retrying an invoice reuses an absolute target rather than blindly adding the amount again. If a previous write committed but its response was lost, the retry recognizes the target. Conflicting manual edits produce a visible reconciliation error.
 - New payments to the same student/class wait behind unresolved synchronization plans. Resolve the earlier invoice using its retry button first. Historical invoices without class/period metadata remain visible and cannot be automatically retried or redistributed.
 - This Google Sheets implementation requires **one running backend process/replica**. Its write queue is process-local. Sheets offers no compare-and-swap or transactions across spreadsheets. Do not concurrently sort, insert/delete rows, or edit collected totals while requests are saving. A shared transactional datastore/lock is required before horizontal scaling.
-- Attendance resolves IDs from a fresh sheet read before writing, ignoring browser row indices. Missing/duplicate IDs fail before date headers or attendance are changed. The name column must be immediately followed by a unique student ID column; there is no name-based fallback.
+- Attendance resolves the `ma_hs` column from a fresh sheet read before writing, ignoring browser row indices. Missing/duplicate IDs fail before date headers or attendance are changed; there is no name-based fallback.
 - `DB_ChoDuyet` preserves processed rows: G status, H processor, I ISO UTC processing timestamp. Dashboard shows separate pending/history views.
-- Student, invoice and pending-report IDs use prefixed UUIDs. Existing IDs are unchanged.
+- New student IDs use `YYYY-NNNNNN`; invoice and pending-report IDs remain request-safe internal identifiers.
 - Default calendar dates use `Asia/Ho_Chi_Minh`. Dashboard revenue has a month selector, sums only paid invoices by collection date, and removes fixed demo metrics. Class count represents the whole class catalogue; mean roster size is derived from active student records and exact comma-separated class IDs.
 
 ## Deployment
 
-1. Back up the affected Google spreadsheets. Verify that `DB_HocPhi` H:N and `DB_ChoDuyet` H:I are unused or have the expected headers. Confirm each student/class pair exists in `DB_DangKyLop` A:B. Existing free-text `DB_HocSinh` class names alone are not accepted as enrollment evidence.
-2. In `server`, install dependencies with `npm ci`. Existing environment variables and service-account configuration are retained.
-3. Inspect `node setup_integrity_schema.js`; run `node setup_integrity_schema.js --apply` to add headers/capacity after checking the dry run. The script refuses incompatible existing headers and does not rewrite historical invoices.
-4. Deploy the backend and frontend together. Older clients lack class/period/request ID and will receive a validation error. Refresh open browser tabs. The old destructive pending-report DELETE endpoint has been replaced by POST `/api/pending-students/:id/resolve`.
-5. Keep backend replicas/process count at one. Exercise a paid invoice, an unpaid invoice, a failed sync/retry and reordered attendance rows against a **test copy** of the spreadsheet before production use.
+### Google Sheets schema 2026–2027
+
+The Sheets backend accepts the normalized LT1 workbooks directly:
+
+- Student tabs: `HOC_SINH_CAP2` and `HOC_SINH_CAP3`, columns `ma_hs` through `ghi_chu`.
+- Attendance class tabs: metadata in rows 1–5, headcount in row 6, week labels in row 7, headers in row 8, exactly twelve attendance columns C:N and notes in O.
+- Attendance values are stored as `CM`, `ON`, `TR`, `BU`, `P`, `K`, `LE` or blank. Rows whose `ma_hs` is still blank remain visible and read-only in the web app.
+- Tuition class tabs use the row-8 headers `ma_hs`, `ho_ten`, `ca_so`, `ca_hinh`, `hoc_phi_niem_yet`, `so_tien_giam`, `ly_do_giam`, `phai_dong`, `so_tien_thuc_nhan`, `con_thieu`, `ghi_chu`. Payment synchronization updates only `so_tien_thuc_nhan`; formula columns are left to Sheets.
+- The class list is discovered from attendance sheet names (`{ma_lop}_{ma_khoa}`), so `DB_LopHoc` and the old class-name field in `DB_HocSinh` are no longer required. Internal audit, pending-student and payment-ledger tabs are created only when those web workflows are first used.
+
+Configure `SPREADSHEET_ID_STUDENTS`, `SPREADSHEET_ID_ATTENDANCE_C2`, `SPREADSHEET_ID_ATTENDANCE_C3`, `SPREADSHEET_ID_TUITION_C2` and `SPREADSHEET_ID_TUITION_C3`. `SPREADSHEET_ID` remains the backward-compatible fallback. Use `ATTENDANCE_SHEET_MAP_JSON` or `TUITION_SHEET_MAP_JSON` only for exceptional names that do not match the web class ID.
+
+1. Back up the five normalized Google spreadsheets and share them with the backend service account.
+2. Set the five spreadsheet IDs above on the backend. Keep `DATA_BACKEND=sheets`, one backend process/replica, and strong `AUTH_USERS_JSON` credentials.
+3. In `server`, run `npm ci` and `npm test`; in `student_management`, run `npm ci`, `npm run build`, `npm run lint` and `npm run test:attendance`.
+4. Deploy backend and frontend together, then refresh open browser tabs.
+5. Exercise one attendance edit for every status code and one paid invoice against a test copy before using production Sheets.
 
 No live spreadsheets were changed by this code update. Authentication/role enforcement is a separate follow-up.
 
