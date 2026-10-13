@@ -50,6 +50,7 @@ export function analyzeWorkbook(buffer,{academicYear,today=new Intl.DateTimeForm
  if(!/^\d{4}-\d{4}$/.test(academicYear||'')||Number(academicYear.slice(5))!==Number(academicYear.slice(0,4))+1)throw invalid('Năm học phải có dạng 2026-2027.');
  const book=openWorkbook(buffer),sheets=[],items=[],warnings=[];
  for(const sheet of book.sheets){
+  if(sheet.name.startsWith("LT1_ChiTiet_")) warnings.push({sheet:sheet.name,message:"Tab chi tiết là bản đối chiếu ca học và ghi chú; không nhập thay đổi từ tab này. Sửa ca/ghi chú trên trang Điểm danh. Checkbox trong template không xóa ghi chú đang lưu."});
   let headerRow=0,columns={};
   for(const [r,cells]of sheet.rows){if(r>20)break;const found={};for(const [c,cell]of cells){const v=normalize(cell.value);for(const [key,aliases]of Object.entries(labels))if(aliases.includes(v)&&!found[key])found[key]=c;}
    if(found.name){headerRow=r;columns=found;break;}
@@ -120,4 +121,21 @@ export function patchWorkbook(buffer,patches){
   book.parts[sheet.path]=strToU8(source);
  }
  return Buffer.from(zipSync(book.parts,{level:6}));
+}
+
+// Add a separate detail sheet without changing the user's existing layout or styles.
+export function appendDetailSheet(buffer, rows) {
+ const book=openWorkbook(buffer),parts=book.parts;
+ let n=1;while(book.sheets.some(s=>s.name===`LT1_ChiTiet_${n}`)||parts[`xl/worksheets/lt1-detail-${n}.xml`])n++;
+ const name=`LT1_ChiTiet_${n}`,path=`xl/worksheets/lt1-detail-${n}.xml`;
+ let workbook=strFromU8(parts['xl/workbook.xml']),rels=strFromU8(parts['xl/_rels/workbook.xml.rels']);
+ let relId=`rIdLT1Detail${n}`;while(rels.includes(`Id="${relId}"`))relId+='x';
+ const sheetId=Math.max(0,...[...workbook.matchAll(/sheetId="(\d+)"/g)].map(m=>Number(m[1])))+1;
+ const data=rows.map((row,i)=>`<row r="${i+1}">${row.map((value,j)=>`<c r="${colLetter(j+1)}${i+1}" t="inlineStr"><is><t xml:space="preserve">${escape(value??'')}</t></is></c>`).join('')}</row>`).join('');
+ parts[path]=strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols><col min="1" max="7" width="25" customWidth="1"/></cols><sheetData>${data}</sheetData></worksheet>`);
+ workbook=workbook.replace('</sheets>',`<sheet name="${name}" sheetId="${sheetId}" r:id="${relId}"/></sheets>`);
+ rels=rels.replace('</Relationships>',`<Relationship Id="${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/lt1-detail-${n}.xml"/></Relationships>`);
+ parts['xl/workbook.xml']=strToU8(workbook);parts['xl/_rels/workbook.xml.rels']=strToU8(rels);
+ parts['[Content_Types].xml']=strToU8(strFromU8(parts['[Content_Types].xml']).replace('</Types>',`<Override PartName="/${path}" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`));
+ return Buffer.from(zipSync(parts,{level:6}));
 }

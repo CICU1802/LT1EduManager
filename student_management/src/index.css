@@ -96,3 +96,8 @@ table { width: 100%; border-collapse: separate; border-spacing: 0; text-align: l
 @media(max-width:767px) { .exchange-upload { grid-template-columns:1fr;gap:20px; }.import-counts { grid-template-columns:repeat(2,minmax(0,1fr)); }.import-actions { flex-direction:column;align-items:stretch; }.data-exchange td .form-input { min-width:0;width:100%;max-width:none; }.storage-notice { flex-wrap:wrap;padding:16px; }.storage-notice > svg { display:none; }.storage-notice .btn { margin-left:0; }.data-exchange .toolbar-filters > .form-input { width:100%; }.upload-field { padding:20px; }.data-exchange .responsive-table td[data-label="Ghép hồ sơ"] { display:block; }.data-exchange .responsive-table td[data-label="Ghép hồ sơ"]::before { display:block; } }
 
 .upload-field { cursor:pointer;position:relative; }.upload-field:focus-within { outline:3px solid #4a9dd7;outline-offset:3px; }
+
+/* Attendance selectors use labels as responsive field containers. */
+.attendance-selector > label { flex: 1 1 170px; min-width: 0; max-width: 100%; }
+.attendance-selector > label:first-child { flex: 2 1 240px; }
+.attendance-selector select { width: 100%; max-width: 100%; }

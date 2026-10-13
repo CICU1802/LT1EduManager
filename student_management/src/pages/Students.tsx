@@ -1,3 +1,4 @@
+import StudentAcademicSummary from '../components/StudentAcademicSummary';
 import { useSearchParams } from 'react-router-dom';
 import { notify } from '../utils/notify';
 import Modal from '../components/Modal';
@@ -504,6 +505,7 @@ const Students = () => {
               </div>
             </div>
 
+            <StudentAcademicSummary key={selectedStudent.id} studentId={selectedStudent.id} />
             <div className="form-actions">
               <button type="button" className="btn btn-primary" aria-label="Đóng cửa sổ" onClick={() => setShowDetailModal(false)}>Đóng</button>
             </div>
